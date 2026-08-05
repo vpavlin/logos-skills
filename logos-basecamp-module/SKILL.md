@@ -87,6 +87,8 @@ import Logos.Controls   // themed components (Logos*)
 
 A hand-rolled `QtQuick.Controls` view is the classic "why does this look off / terrible" smell — using the design system is what makes a view look like part of Logos instead of bespoke.
 
+**Mind the host's bundled version (a load-failure trap).** The available components *and their properties* are gated by the design-system version the **target Basecamp bundles**, not the latest repo. On an older host (e.g. 0.2.0), a newer **type** is `"<X> is not a type"` and a newer **property** is `"Cannot assign to non-existent property <p>"` — **both stop the whole view from loading** (`Failed to compile ui_qml view … Failed to load UI module`), whereas a missing `Theme.*` **token** just evaluates to `undefined` and degrades to a default (ugly, not fatal). So: verify every `Logos*` type/property against the host you actually target. The proven-safe baseline for Basecamp 0.2.0 is what a known-good shipped view uses — **`LogosText` + `LogosButton` with basic props** (as in the Perun reference[^15]). For anything newer (`LogosTextField`, `LogosCopyableText`, `LogosButton.variant`/`Variant`, etc.), either confirm it exists in the host's bundle or fall back to a plain `QtQuick.Controls` control styled with `Theme.*` tokens (define one `component AppField: TextField { color: Theme.palette.text; background: Rectangle { color: Theme.palette.surface; … } }` and reuse it). A read-only selectable `TextField` + a `LogosButton` "Copy" (backed by an off-screen `TextEdit { }`.`copy()`) replaces `LogosCopyableText` safely.
+
 ## Builder + glue quirks (symptom → cause → fix)
 
 | Symptom | Root cause | Fix |
