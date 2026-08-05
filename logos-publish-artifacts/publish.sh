@@ -69,10 +69,15 @@ if [ "${#LGXS[@]}" -gt 0 ]; then
   mkdir -p "$BASECAMP_REPO"
   for lgx in "${LGXS[@]}"; do
     [ -f "$lgx" ] || { echo "no such .lgx: $lgx" >&2; exit 1; }
-    # sanity: a portable module manifest has hashes.root; a -dev build won't publish cleanly
-    tar xzOf "$lgx" manifest.json >/dev/null 2>&1 || { echo "not a valid .lgx (no manifest.json): $lgx" >&2; exit 1; }
-    install -m644 "$lgx" "$BASECAMP_REPO/$(basename "$lgx")"
-    echo "  + basecamp: $(basename "$lgx")" >&2
+    # sanity + read the module name: a portable module manifest has name + hashes.root
+    mname=$(tar xzOf "$lgx" manifest.json 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)['name'])" 2>/dev/null) \
+      || { echo "not a valid .lgx (no manifest.json): $lgx" >&2; exit 1; }
+    # STABLE per-module filename (overwrite the previous version) — a single-latest
+    # repo lists ONE .lgx per module; a versioned filename would accumulate and the
+    # index (which lists every *.lgx) would show duplicate entries for the module.
+    dest="logos-${mname}-module.lgx"
+    install -m644 "$lgx" "$BASECAMP_REPO/$dest"
+    echo "  + basecamp: $dest  (${mname} $(tar xzOf "$lgx" manifest.json 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('version','?'))" 2>/dev/null))" >&2
   done
   # catalog identity card — create once, never clobber a multi-app catalog
   if [ ! -f "$BASECAMP_REPO/logos-repo.json" ]; then
