@@ -166,7 +166,7 @@ A converging build is not a shipped one. The last mile is its own step, and each
 2. **Build the artifacts.**
    - Desktop: `nix build .#lgx-portable` for **both** the core module and the view module → one `.lgx` each. (Git-track every new file first — nix flakes only see tracked files — and pin SDK inputs by full 40-char SHA.)
    - Mobile: `expo prebuild --platform android` then `./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a` → a release-key-signed APK (arm64-only).
-3. **Publish to the repo the client actually reads** (the #1 publish trap — publishing to a repo nothing points at looks like success and ships nothing):
+3. **Publish to the repo the client actually reads** (the #1 publish trap — publishing to a repo nothing points at looks like success and ships nothing). Load **logos-publish-artifacts** and run its `publish.sh` — it does both halves and regenerates the signed indexes; the mechanics below are what it encodes:
    - Basecamp: drop each `.lgx` into a **package repo**, regenerate its `index.json` + `logos-repo.json`, serve over HTTPS (a LAN host, or a public catalog repo that points at released artifacts).
    - Mobile: a self-hosted **F-Droid** repo — a `metadata/<pkg>.yml` is **required** or `fdroid update` produces an *empty* index (the device sees no app); `fdroid update` re-signs the index with the repo keystore (the APK is separately release-key-signed).
 4. **Cut a release.** Commit + docs/CHANGELOG, tag, `gh release create <tag>` with **the artifacts attached** (each `.lgx` + the `.apk`). Optionally a public catalog repo whose index points at the released artifact URLs, so installs come from GitHub releases, not your laptop.

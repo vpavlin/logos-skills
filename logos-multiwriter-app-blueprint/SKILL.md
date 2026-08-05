@@ -19,6 +19,7 @@ Stand up a NEW multi-writer, offline-convergent Logos app: a **Basecamp core+vie
 | **logos-basecamp-module** | The desktop half: a `core` (universal) module + a `ui_qml` view, the `callModule`/`onModuleEvent` bridge, `.lgx` packaging. | Building the desktop app and the always-on headless hub. |
 | **logos-mobile-app** | The phone half: JNI bridge to the prebuilt `liblogosdelivery.so`, the config plugin that survives `expo prebuild`, cross-thread event delivery, F-Droid release. | Adding the phone. Symptoms: "phone receives nothing", "undefined is not a function", release SIGSEGV, node offline. |
 | **logos-distributed-debugging** | Per-stage counters across the receive/reconcile pipeline; telling relay-down from wrong-key from channel-not-firing apart. | The moment anything "syncs nothing" or partially. Keep it open the whole build. |
+| **logos-publish-artifacts** | Distributing built artifacts: `.lgx`(s) → a Basecamp package repo, APK → an F-Droid repo, regenerating the signed indexes (bundled `publish.sh`). | Step 8 / go-live, and any time "the device still shows the old version." |
 
 ## Build order (each step is testable before the next)
 1. **Contract + engine + fold** (multiwriter-sync) — pure, in-process, no network. Convergence property test is the gate.
@@ -28,7 +29,7 @@ Stand up a NEW multi-writer, offline-convergent Logos app: a **Basecamp core+vie
 5. **Headless hub** — same core, run standalone for always-on availability.
 6. **Mobile** (mobile-app) — embed the node, join the same channel, converge with desktop + hub.
 7. **Instrument throughout** (distributed-debugging) — counters from step 3 onward.
-8. **Finalize & ship** (basecamp-module + mobile-app) — co-release core/view/mobile; build the `.lgx`s + APK; publish to the repo the client actually reads; tag a release with the artifacts; install from the *published* path on a clean client. Converging ≠ shipped — see HANDBOOK §Step 8.
+8. **Finalize & ship** (basecamp-module + mobile-app to *build*; **logos-publish-artifacts** to *distribute*) — co-release core/view/mobile; build the `.lgx`s + APK; publish to the repo the client actually reads (the bundled `publish.sh` updates the Basecamp package repo + F-Droid repo and regenerates the signed indexes); tag a release with the artifacts; install from the *published* path on a clean client. Converging ≠ shipped — see HANDBOOK §Step 8.
 
 ## Decisions to make up front (don't defer these)
 - **Event schema** — `{ v, id:UUIDv4, type, hlc:{wall,ctr,dev}, dev, payload }`. `id` is the idempotency key. Version field from day one.
