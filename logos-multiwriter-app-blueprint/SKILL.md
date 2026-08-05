@@ -28,6 +28,7 @@ Stand up a NEW multi-writer, offline-convergent Logos app: a **Basecamp core+vie
 5. **Headless hub** — same core, run standalone for always-on availability.
 6. **Mobile** (mobile-app) — embed the node, join the same channel, converge with desktop + hub.
 7. **Instrument throughout** (distributed-debugging) — counters from step 3 onward.
+8. **Finalize & ship** (basecamp-module + mobile-app) — co-release core/view/mobile; build the `.lgx`s + APK; publish to the repo the client actually reads; tag a release with the artifacts; install from the *published* path on a clean client. Converging ≠ shipped — see HANDBOOK §Step 8.
 
 ## Decisions to make up front (don't defer these)
 - **Event schema** — `{ v, id:UUIDv4, type, hlc:{wall,ctr,dev}, dev, payload }`. `id` is the idempotency key. Version field from day one.

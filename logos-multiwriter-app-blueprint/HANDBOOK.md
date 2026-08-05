@@ -159,6 +159,19 @@ Load **logos-distributed-debugging** from step 3 onward. One counter per receive
 
 Symptom → stage: `rxSeen 0` ⇒ no peer / mesh not delivering. `rxSeen>0, rxOpened 0` ⇒ wrong key/topic or payload-encoding mismatch. `dMsg` climbing but `dChan` 0 ⇒ channel layer never firing (you subscribed but didn't `channelCreate`, or vice-versa).[^26]
 
+### Step 8 — Finalize & ship (go-live)
+A converging build is not a shipped one. The last mile is its own step, and each surface's mechanics live in its skill (**logos-basecamp-module** for the `.lgx`, **logos-mobile-app** for the APK). The reproducible sequence:
+
+1. **Version in lockstep.** The core, the view, and the mobile app version independently but must be **co-released** — a view calling a core method the deployed core lacks is the opaque "Invalid response" (pitfall 5). Bump all that changed; record it in a CHANGELOG.
+2. **Build the artifacts.**
+   - Desktop: `nix build .#lgx-portable` for **both** the core module and the view module → one `.lgx` each. (Git-track every new file first — nix flakes only see tracked files — and pin SDK inputs by full 40-char SHA.)
+   - Mobile: `expo prebuild --platform android` then `./gradlew assembleRelease -PreactNativeArchitectures=arm64-v8a` → a release-key-signed APK (arm64-only).
+3. **Publish to the repo the client actually reads** (the #1 publish trap — publishing to a repo nothing points at looks like success and ships nothing):
+   - Basecamp: drop each `.lgx` into a **package repo**, regenerate its `index.json` + `logos-repo.json`, serve over HTTPS (a LAN host, or a public catalog repo that points at released artifacts).
+   - Mobile: a self-hosted **F-Droid** repo — a `metadata/<pkg>.yml` is **required** or `fdroid update` produces an *empty* index (the device sees no app); `fdroid update` re-signs the index with the repo keystore (the APK is separately release-key-signed).
+4. **Cut a release.** Commit + docs/CHANGELOG, tag, `gh release create <tag>` with **the artifacts attached** (each `.lgx` + the `.apk`). Optionally a public catalog repo whose index points at the released artifact URLs, so installs come from GitHub releases, not your laptop.
+5. **Verify from the published path, not your build output.** Install the app on a *clean* client from the published repo — the exact version a user fetches — and confirm it launches and syncs. This is the "verify via the real path" discipline: your `dist/` working correctly proves nothing about what the repo serves (a real regression this session: an APK was published to the wrong F-Droid repo and the phone kept seeing the old version).
+
 ---
 
 ## 3. Where each sibling skill plugs in
@@ -208,11 +221,19 @@ These each, alone, produce "syncs nothing" with no error.
 ---
 
 ## 5. "Done" definition
+Two bars — **converging** (the engineering is right) and **shipped** (a user can actually get it).
+
+Converging:
 - Convergence property test green (step 1).
 - Two desktop cores + hub converge over the channel, live and after offline edits (steps 3–5).
 - Phone converges with them both directions on real hardware (step 6).
 - The debug counters distinguish every failure stage (step 7).
 - A cold-start joiner gets full history via your chosen §1.7 mechanism.
+
+Shipped (step 8):
+- Core + view `.lgx` published to a Basecamp package repo; APK published to an F-Droid repo *with* a `metadata/<pkg>.yml`.
+- A tagged release with the artifacts attached (and, if public, a catalog repo pointing at them).
+- Installed on a **clean client from the published repo** (not your build output) — launches and syncs.
 
 ---
 
