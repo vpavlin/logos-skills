@@ -71,6 +71,22 @@ Component.onCompleted: { logos.onModuleEvent && logos.onModuleEvent("<app>_core"
 ```
 On a **mutation**, have the core return the fresh state JSON, so the view renders straight from the instance that applied the edit (don't wait for the next poll).[^8]
 
+## Style the view with the Logos design system (do NOT hand-roll QtQuick)
+
+A `ui_qml` view must use the official **`logos-design-system`**, not bespoke `QtQuick.Controls`. The Basecamp host **bundles** it (it's a transitive dep in the module `flake.lock`), so it resolves at runtime with **no extra flake input** — just import it:[^15]
+
+```qml
+import QtQuick
+import Logos.Theme      // design tokens (singleton `Theme`)
+import Logos.Controls   // themed components (Logos*)
+```
+
+- **Components** (use these, not raw QtQuick): `LogosText`, `LogosButton` / `LogosIconButton`, `LogosTextField`, **`LogosCopyableText`** (a selectable/copyable value — ideal for a pairing code / shareable secret / address), `LogosComboBox`, `LogosSearchBar`, `LogosTable` + `LogosTableColumn`, `LogosTabBar` + `LogosTabButton`, `LogosCheckbox`, `LogosDialog`.
+- **Tokens** (never hardcode a color/spacing/radius/font): `Theme.palette.*` (`text`, `textTertiary`, `background`, `surface`, `surfaceRaised`, `primary`, `success`, `warning`, `border`, `borderHairline`, …), `Theme.spacing.*` (`tiny:4` … `xxlarge:40`, `radiusSmall` … `radiusPill`), `Theme.typography.*`.
+- **Reference + catalog:** copy the consumption pattern from a real consuming view;[^15] browse the components + tokens with the design-system storybook (`nix run` in `logos-co/logos-design-system`).
+
+A hand-rolled `QtQuick.Controls` view is the classic "why does this look off / terrible" smell — using the design system is what makes a view look like part of Logos instead of bespoke.
+
 ## Builder + glue quirks (symptom → cause → fix)
 
 | Symptom | Root cause | Fix |
@@ -124,6 +140,7 @@ The view and core are **independently-installed packages** and can skew. When th
 - Host it as a `systemd --user` service with `Restart=always` + `loginctl enable-linger`; it serves files live (no restart after republish). TLS needs a **leaf** cert (`CA:FALSE`+`serverAuth`) — `openssl req -x509` defaults to `CA:TRUE` on OpenSSL 3 and the host rejects a CA cert used to terminate TLS. Verify the repo answer with **`lgpd`** (logos-package-downloader — the catalog tool the repo view uses), NOT lgpm: `repo add <…/logos-repo.json>` → `repo refresh` → `--json info <pkg>`, and compare your `variants` to an official package that IS available (e.g. `chat_ui`). A one-command `regen.sh` that builds both `.lgx-portable`, installs them, regenerates the index, and rewrites the identity card is the reliable shipping path.[^15]
 
 For hot-swapping a single `.so` into a signed `.lgx` **without a full rebuild** (the merkle-hash repack), and the full publishing walkthrough, see `reference/publishing-and-repack.md`.
+[^15]: The design system `logos-co/logos-design-system` (`Logos.Theme` tokens + `Logos.Controls` components), bundled by the Basecamp host (a transitive dep in the module `flake.lock`, so no explicit input needed). Consuming-view reference: `perun/module/src/qml/Main.qml` (`import Logos.Theme` / `import Logos.Controls`; `LogosText`, `Theme.palette.*`, `Theme.spacing.*`). KYM's `module/Main.qml`, by contrast, hand-rolls `QtQuick.Controls` — the anti-pattern this section exists to prevent.
 
 ## Running the core as a headless hub — the gotchas
 
@@ -171,6 +188,7 @@ All paths under `github.com/vpavlin/kym` (checked out at `/home/vpavlin/kym`) un
 [^12]: Memory `kym-brand-logo`; icon bundling confirmed in `<builder>/lib/mkLogosQmlModule.nix:83-89` (`iconFiles = src + "/${config.icon}"`; `install -D -m644 ${icon} $out/lib/${config.icon}`) + runtime load in `<builder>/app/main.cpp:152-161` (`setWindowIcon` from metadata `icon` relative to the metadata dir) + `module/metadata.json` (`"icon":"icon.png"` sibling to `"view"`). Git-tracked-files trap: `docs/logos-dev-notes.md` §"logos-module-builder" (git-add new files so nix sees them).
 [^13]: `module/flake.nix` (`mkLogosQmlModule { src=./.; configFile=./metadata.json; flakeInputs=inputs; }`; `kym_core.url="path:../kym_core"` with `logos-module-builder.follows` and `delivery_module.follows`) and `kym_core/flake.nix` (`mkLogosModule`, same pinned builder rev + delivery follows). Builder lib: `<builder>/lib/mkLogosQmlModule.nix`, `mkLogosModule.nix`.
 [^14]: Memory `logos-lgx-hash-repack` — `.lgx` = gzip'd tar, `manifest.json` + `variants/<variant>/…`; merkle leaf/parent/root formula (self-verified in-session to reproduce real 0.2.1 hashes). See `reference/publishing-and-repack.md`.
+[^15]: The design system `logos-co/logos-design-system` (`Logos.Theme` tokens + `Logos.Controls` components), bundled by the Basecamp host (a transitive dep in the module `flake.lock`, so no explicit input needed). Consuming-view reference: `perun/module/src/qml/Main.qml` (`import Logos.Theme` / `import Logos.Controls`; `LogosText`, `Theme.palette.*`, `Theme.spacing.*`). KYM's `module/Main.qml`, by contrast, hand-rolls `QtQuick.Controls` — the anti-pattern this section exists to prevent.
 [^15]: `~/vpavlin-home/regen.sh` (portable build; comment: `-dev` shows "NOT AVAILABLE", lgpm wants `-dev` but is a different code path; `logos-repo.json` schemaVersion 1 + `indexUrl`; index schema 2 with per-version `size`/`sha256`(of file)/`rootHash`(=manifest.hashes.root)/embedded `manifest`; systemd --user repo service serving live) + `scripts/gen-lan-repo.sh` (same index generator; https-only, URL points at `logos-repo.json` not `index.json`) + `scripts/serve-lan.sh:20-31` (leaf cert: `basicConstraints=critical,CA:FALSE` + `extendedKeyUsage=serverAuth`, because `openssl req -x509` defaults to CA:TRUE and the host rejects a CA cert for TLS). Memories: `logos-repo-publishing` (portable vs -dev, verify with lgpd vs an official package, bump version), `kym-lan-repo-publishing`.
 [^16]: `docs/logos-dev-notes.md` §"Running headless: logoscore" — `-c 'mod.method(a,b)'` mangles args three ways (numbers→`int` so a QString slot silently no-ops; double-quotes stripped; split on every comma); dispatch log says "Method call successful" while no event lands; test by building the JSON in C++ then deleting the self-test method; a non-numeric text arg does marshal as QString. Memory: `logoscore-cli-arg-mangling`.
 [^17]: `hub/kym-hub.sh` (`logoscore -D -m <dir>` daemon then `load-module kym_core`; the manifest dep pulls `delivery_module`; `KYM_HUB=1` arms the self-drive tick) + `hub/kym-hub.service` (systemd --user, `Restart=always`). `docs/logos-dev-notes.md` §"Running headless: logoscore" (daemon keeps `capability_module` alive so returns come back; modules must be portable). Memory `kym-headless-hub` (self-drive must be a QTimer on the event-loop thread, not a std::thread — createNode hangs otherwise).
