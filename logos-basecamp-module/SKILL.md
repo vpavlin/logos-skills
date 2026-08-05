@@ -54,6 +54,8 @@ If the emit fires on a non-Qt thread (e.g. a delivery callback), marshal it back
 
 **Calling a dependency core (the caller cheat-sheet).** For each name in `dependencies`, the builder generates a typed caller reachable as `modules().<dep>`. The exact generated method names are derived from that dep's public action signatures — read the dep's own header (or an existing consumer's `.cpp`) to get them; there is no separate registry. Sync-transport shape you'll use most (the `delivery_module` dependency): `createNodeAsync(cfgJson, cb)`, `startAsync(cb)`, `subscribeAsync(topic, cb)`, `channelCreateAsync(channelId, contentTopic, senderId, cb)`, `channelSendAsync(channelId, msgJson, cb)`, plus receive callbacks registered via `onMessageReceived(cb)` / `onChannelMessageReceived(cb)`. Confirm the async vs sync variants and arg order against the pinned rev's header before wiring — see `logos-reliable-channels` for the semantics.
 
+**Never make a *blocking* `callModule` during load.** `logos.callModule(...)` is a **synchronous IPC** (20 s timeout). Calling it during `Component.onCompleted`, or reactively from a binding/`on<Prop>Changed` that first fires when the initial `snapshot()` populates state, runs a nested blocking call *inside view construction* and **wedges the QML render — the view "does not load"** (it compiled fine; it's frozen, not broken). Poll `snapshot()` on a `Timer` (that fires after the first render) and **defer any load-triggered call with `Qt.callLater(fn)`** so the view paints first. (Real case: a reactive `onSecretChanged: buildQr()` — where `buildQr` did a synchronous `callModule("shareQr")` — froze the whole view until it was changed to `Qt.callLater(root.buildQr)`.)
+
 View skeleton that works:
 ```qml
 function callCore(m, a) {
