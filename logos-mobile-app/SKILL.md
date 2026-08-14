@@ -104,6 +104,13 @@ These don't fail the JS/dev build; they fail `assembleRelease` **after** a 15-mi
 3. **Fresh-scaffold splash + debug-signing traps.** An Expo scaffold with no `splash` config still emits a `splashscreen.xml` referencing `@color/splashscreen_background`, which is **undefined → AAPT hard-fails** the release build; define the color (a tiny `withSplashColor`-style plugin or `colors.xml` entry). And per §10, the template signs **release** with the shared debug key — inject a real release `signingConfig` + generate the keystore *before* you publish, because the signing cert is the app's permanent update identity.
 4. **`expo prebuild --clean` wipes `android/local.properties`.** The `--clean` regenerates `android/` from scratch, deleting the `sdk.dir=...` line gradle needs → `assembleRelease` fails with "SDK location not found." Re-write `android/local.properties` with `sdk.dir=$ANDROID_HOME` after every `--clean` prebuild (or rely on the `ANDROID_HOME`/`ANDROID_SDK_ROOT` env, but the file is what a fresh checkout/CI most reliably needs).
 
+## 12. Startup crashes you can't see — surface them, and suspect Modal bodies first
+
+A release APK that **flashes the splash/logo then dies** is a JS error thrown during initial module-eval or first render (or a native crash *below* JS). You often can't get `adb logcat` — the tester installed over F-Droid with no USB. Two moves:
+
+- **Ship a diagnostic entry that renders the error on-screen.** Temporarily replace `index.js`/`index.ts` so it catches all three startup-crash classes and shows the message+stack as selectable `Text` instead of dying: (1) `require("./App")` inside a `try/catch` — catches a **module-eval throw anywhere in the import graph**, which a static `import` cannot; (2) wrap `<App/>` in an `ErrorBoundary` (`getDerivedStateFromError`) — render throws; (3) install `ErrorUtils.setGlobalHandler` — async / native-bridge throws. A red screen names the exact file+line in **one install**; a **still-silent** die means the crash is native (below JS) → suspect New-Architecture + a legacy JNI bridge, not your JS. Revert to the 3-line entry after.
+- **Suspect an unguarded deref in a Modal/sheet body FIRST**, before blaming sync or native. **React Native `<Modal visible={false}>` STILL renders its children** — the body evaluates on *every* render, including the first, when its backing state is `null`. `roleOf(state!.cal)` (or any `state.x`) left *outside* a `state ? … : …` guard throws `cannot read property x of null` at startup, before the user ever opens the sheet. Guard the whole expression, or gate the mount with `{state && <Modal/>}` instead of `visible={!!state}`. (Real case: a settings-sheet "your role" line crashed Scala on every launch; the diagnostic entry caught it as a render throw in one install.)
+
 ## Pre-flight: silent-failure table
 
 | Symptom | Root cause | Fix |
@@ -119,6 +126,7 @@ These don't fail the JS/dev build; they fail `assembleRelease` **after** a 15-mi
 | Both nodes "up," neither receives | different pubsub shard | Compare `/waku/2/rs/x/y` from Metrics (§9) |
 | Phone accepts a stranger's "update" | signed with shared debug key | Real release signing plugin (§10) |
 | F-Droid index empty after publish | published to a repo with empty `metadata/` | Publish to the trusted served repo (§11) |
+| Splash/logo flashes, then the app dies | JS throw at module-eval or first render — often an unguarded state deref in a `<Modal visible={false}>` body (RN renders it anyway) | Ship the diagnostic `index` (require-in-try/catch + ErrorBoundary + ErrorUtils) to see the stack; guard state derefs in modal bodies (§12) |
 
 ## Where else this applies
 

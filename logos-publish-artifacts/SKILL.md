@@ -41,6 +41,19 @@ publish.sh --lgx .../core.lgx --lgx .../view.lgx \
 3. Read back the printed Basecamp package list + F-Droid version, and — per trap 6 — verify the served index over its URL (or a clean client) before reporting done.
 4. If the served repo is fronted by a long-running server, it serves the files live; no restart is needed after republishing.
 
+## Public storefront / catalog — two surfaces, and the card fields
+A public catalog like `apps.vpavlin.xyz` (repo `vpavlin/logos-apps`, served via GitHub Pages) is **not one repo** — it has **two independent Basecamp surfaces, and you must update BOTH**. Updating one while the other is stale is trap #3 ("publish to the repo the client actually reads") in its public form: the module installs fine yet never appears on the site, or vice-versa.
+
+- **What the Basecamp APP installs from:** a package repo under the site (`…/basecamp/logos-repo.json` → `indexUrl` = the raw `…/basecamp/index.json`). Drop the `.lgx` in, rescan → `index.json` (the same schemaVersion-2 generator as the LAN case; `url` base is the raw-githubusercontent `…/main/basecamp`). This makes the module *installable*.
+- **What the WEBSITE's Basecamp tab lists from:** a **separate** catalog index published as a GitHub **release asset** on the catalog repo (`vpavlin/logos-basecamp-modules`, tag `index`, asset `index.json`), where each module's `.lgx` is itself a per-tag release asset (`<name>-v<ver>/<name>-<ver>.lgx`). The site generator (`gen_modules_page.py`) fetches THIS, not `basecamp/index.json`.
+- **⚠️ Landmine — the "release-all" Action can wipe the catalog.** It DISCOVERS modules from `.gitmodules`; if that's empty (the fork-template default) and the index was seeded another way, running the Action rebuilds the index **empty, dropping every module**. Do NOT run it to add one module. Edit the `index` release asset **additively** by hand: create the per-module release tag(s) holding the `.lgx`, merge the new entries into the fetched index **preserving all others**, and re-upload (the asset MUST stay named `index.json` — uploading a differently-named file adds a stray asset, it doesn't replace the index).
+
+### The storefront card (name / logo / Source pill)
+A module renders a lowercase name, no logo, and no repo pill unless THREE things exist — same three whether on the site or in a package-manager card:
+1. **Display name** = the `.lgx` manifest `display_name` (falls back to the lowercase module `name`). Set `"display_name"` in the module's `metadata.json`. Convention: the *view* (`ui_qml`) carries the nice name; the core shows plainly.
+2. **Logo** = an `icon.png` **baked into the `.lgx`** (the site extracts it from the tar by basename → data-URI; missing → a lettered monogram). Set `"icon":"icon.png"` in `metadata.json` **and** place `icon.png` next to it. **GOTCHA: a nix flake only sees git-TRACKED files** — an untracked `icon.png` (or an uncommitted `metadata.json` edit) is invisible, and the module-builder silently builds the OLD committed manifest (it may even print `git add <path>`). `git add` the icon + metadata **before** `nix build .#lgx-portable`, then verify `tar tzf x.lgx | grep icon` and `tar xzOf x.lgx manifest.json`.
+3. **Source pill** = an editorial `overrides.json` entry (in the site repo, keyed by module `name`) `{"repo":"https://…","featured":true}` — Basecamp manifests carry no repo URL, so this is override-only. Mirror the sibling entries.
+
 ## Where else this applies
 Any self-hosted Logos distribution: a household LAN repo, a team's internal repo, or a public catalog repo whose index points at GitHub-release artifact URLs (swap `--lgx` local paths for released URLs and regenerate the index the same way). The Basecamp-index and F-Droid-metadata rules are identical regardless of app domain.
 
