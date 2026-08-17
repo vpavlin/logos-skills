@@ -14,6 +14,9 @@ They are **generic playbooks** (any domain: shared calendars, activity trackers,
 | **logos-basecamp-module** | The desktop half: a universal `core` module + a thin QML `view`, `.lgx` build/publish, the builder-glue quirks, the always-on headless hub. |
 | **logos-mobile-app** | The phone half: React Native + `liblogosdelivery` JNI, building the arm64 lib, the `expo prebuild` template trap, F-Droid release. |
 | **logos-distributed-debugging** | The methodology: walk the layered chain, instrument-and-measure, same-event-two-listeners, verify-via-the-real-path. |
+| **logos-publish-artifacts** | Ship built artifacts to self-hosted repos: `.lgx` → a Basecamp package repo, APK → an F-Droid repo. Encodes the silent traps (PORTABLE-not-`-dev`, required F-Droid metadata, `CurrentVersionCode` pinning, and the **index-v1-vs-index-v2/entry.json staleness** that strands releases). Bundled `publish.sh` does both halves + verifies the indexes regenerated together. |
+| **loam-integrate-app** | Integrate a React-Native app as a **client of the device-wide Loam shared delivery node** (many apps → one Waku/Logos node): the `preferServiceBackend` ordering, service binding, the approval prompt, and the "shared enabled but runs its own node" gotchas. |
+| **loam-update-app** | Move a Loam mobile app onto a newer `loam-transport` SDK: bump the submodule, rebuild the release APK, publish — encoding the build traps (`expo prebuild --clean` wiping `local.properties`, the shim entry-file import, submodule realign). |
 
 ## Install
 
@@ -21,7 +24,7 @@ Claude Code loads skills from `~/.claude/skills/`. Clone and copy (or symlink) t
 
 ```sh
 git clone https://github.com/vpavlin/logos-skills.git
-cp -r logos-skills/logos-* ~/.claude/skills/      # or: ln -s per dir
+cp -r logos-skills/logos-* logos-skills/loam-* ~/.claude/skills/   # or: ln -s per dir
 ```
 
 They then load automatically in every project. Read `logos-multiwriter-app-blueprint/HANDBOOK.md` before cutting the first line.

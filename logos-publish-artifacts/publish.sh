@@ -135,12 +135,46 @@ CurrentVersionCode: 2147483647
 YML
     echo "  + fdroid metadata: metadata/${APK_PKG}.yml (created)" >&2
   fi
-  cp -f "$APK" "$FDROID_HOME/repo/$(basename "$APK")"
-  echo "  + fdroid: repo/$(basename "$APK")" >&2
+  # Self-hosted repos are single-latest — always suggest the newest APK. A stale
+  # CurrentVersionCode pinned to a PREVIOUS build makes `fdroid update` emit
+  # suggestedVersionCode = that old code, so F-Droid sees the new APK in the repo
+  # but NEVER OFFERS IT AS AN UPDATE ("it's there but no update"). Force the
+  # always-newest placeholder on every publish so an existing/pinned metadata
+  # can't silently strand a release.
+  if grep -q '^CurrentVersionCode:' "$META"; then
+    sed -i 's/^CurrentVersionCode: .*/CurrentVersionCode: 2147483647/' "$META"
+  else
+    echo 'CurrentVersionCode: 2147483647' >> "$META"
+  fi
+  # Name the repo copy by APPLICATION ID, not the build's generic basename
+  # (app-release.apk). Every app's gradle output is "app-release.apk", so copying by
+  # basename made each app's publish CLOBBER the previous app's file in repo/, and
+  # `fdroid update` then dropped that version from the index (apps silently vanished /
+  # lost their latest). One stable file per app (overwrite) = single-latest, no
+  # cross-app collision — the same "overwrite under a stable name" rule the Basecamp
+  # .lgx side already uses.
+  APK_DEST="${APK_PKG}.apk"
+  cp -f "$APK" "$FDROID_HOME/repo/$APK_DEST"
+  echo "  + fdroid: repo/$APK_DEST" >&2
   if [ "$DO_FDROID_UPDATE" -eq 1 ]; then
-    ( cd "$FDROID_HOME" && "$FDROID_BIN" update --pretty < /dev/null >/dev/null 2>&1 ) \
-      && echo "  fdroid index regenerated -> $BASE/fdroid/repo" >&2 \
-      || { echo "  fdroid update FAILED — run manually: (cd $FDROID_HOME && $FDROID_BIN update --pretty)" >&2; exit 1; }
+    _fdroid_regen() { ( cd "$FDROID_HOME" && "$FDROID_BIN" update --pretty < /dev/null >/dev/null 2>&1 ); }
+    _fdroid_regen || { echo "  fdroid update FAILED — run manually: (cd $FDROID_HOME && $FDROID_BIN update --pretty)" >&2; exit 1; }
+    # Modern F-Droid reads index-v2 via entry.json; `fdroid update` has been observed to rewrite
+    # index-v1 but LEAVE index-v2/entry.json STALE — clients then never see the new version and NO
+    # client refresh can fix it (the server's v2 is stale). Assert all three regenerated together
+    # (v2/entry not OLDER than v1); re-run once, then hard-fail so a publish can't silently strand.
+    V1="$FDROID_HOME/repo/index-v1.json"; V2="$FDROID_HOME/repo/index-v2.json"; EN="$FDROID_HOME/repo/entry.json"
+    if [ -f "$V2" ] && [ -f "$EN" ]; then
+      if [ "$EN" -ot "$V1" ] || [ "$V2" -ot "$V1" ]; then
+        echo "  index-v2/entry.json stale vs index-v1 — regenerating..." >&2
+        _fdroid_regen
+      fi
+      if [ "$EN" -ot "$V1" ] || [ "$V2" -ot "$V1" ]; then
+        echo "  ERROR: index-v2/entry.json still stale after re-run — F-Droid (v2) would not see the update. Aborting." >&2
+        exit 1
+      fi
+    fi
+    echo "  fdroid index regenerated (v1+v2+entry) -> $BASE/fdroid/repo" >&2
   fi
 fi
 
