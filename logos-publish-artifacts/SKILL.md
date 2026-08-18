@@ -54,6 +54,51 @@ A module renders a lowercase name, no logo, and no repo pill unless THREE things
 2. **Logo** = an `icon.png` **baked into the `.lgx`** (the site extracts it from the tar by basename → data-URI; missing → a lettered monogram). Set `"icon":"icon.png"` in `metadata.json` **and** place `icon.png` next to it. **GOTCHA: a nix flake only sees git-TRACKED files** — an untracked `icon.png` (or an uncommitted `metadata.json` edit) is invisible, and the module-builder silently builds the OLD committed manifest (it may even print `git add <path>`). `git add` the icon + metadata **before** `nix build .#lgx-portable`, then verify `tar tzf x.lgx | grep icon` and `tar xzOf x.lgx manifest.json`.
 3. **Source pill** = an editorial `overrides.json` entry (in the site repo, keyed by module `name`) `{"repo":"https://…","featured":true}` — Basecamp manifests carry no repo URL, so this is override-only. Mirror the sibling entries.
 
+## The LAN host has FOUR F-Droid repos, and the key decides where an app may go
+
+`FDROID_HOME` defaults to `~/fdroid`, which is right for some apps and quietly
+wrong for others. On the current host (jimmy-crib):
+
+| directory | index key | served as | holds |
+|---|---|---|---|
+| `~/fdroid` | `jimmy-crib` | `https://<host>:8444/fdroid/repo` | `co.logos.*`, cydchat, shrooms |
+| `~/fdroid-loam` | `loam` | `https://<host>:8444/loam-fdroid/repo` | `xyz.vpavlin.{kym,loam,perun,qaku,scala}` |
+| `~/logos-apps-fdroid` | `logosapps` | pushed to `vpavlin/logos-apps` → apps.vpavlin.xyz | the public catalog |
+| `~/kym-fdroid` | `jimmy-crib` | not served | empty, superseded |
+
+The served paths are symlinks under `~/vpavlin-home/`, so "which directory" and
+"which URL" are two different questions — check the symlink, do not assume the
+basename.
+
+**Before publishing, find out which repo the DEVICE has added.** An app can live
+in several repos at once (`xyz.vpavlin.scala` is in two today), and publishing to
+one the device has not added is trap #3 wearing a different hat: the publish
+succeeds, the index is correct, the phone never offers the update.
+
+### The signing rule that decides whether an update can install at all
+
+`publish-fdroid.sh` signs the **APK** with the repo's own key. That is fine while
+an app lives in one repo and is a trap the moment it moves:
+
+- The **index** key is per repo. A client trusts a repo by its fingerprint, so a
+  new repo just means confirming a new fingerprint. Harmless.
+- The **APK** key is the app's identity forever. Android refuses an update signed
+  by a different key, and the only way past it is uninstalling — which for an app
+  holding device state means losing it. For Shrooms that is the mesh identity and
+  every credential, i.e. re-enrolling the device.
+
+So to publish an existing app into a **second** repo: sign the APK with the key
+it has always had, drop that same signed file into the other repo's `repo/`, add
+`metadata/<applicationId>.yml`, and run `fdroid update` there — which signs that
+repo's index with that repo's key. Two keys, two jobs, exactly as the public
+catalog already does it.
+
+Check before assuming which key an app carries:
+
+```sh
+apksigner verify --print-certs repo/<app>-<code>.apk | grep 'Signer #1 certificate DN'
+```
+
 ## Where else this applies
 Any self-hosted Logos distribution: a household LAN repo, a team's internal repo, or a public catalog repo whose index points at GitHub-release artifact URLs (swap `--lgx` local paths for released URLs and regenerate the index the same way). The Basecamp-index and F-Droid-metadata rules are identical regardless of app domain.
 
