@@ -1,13 +1,24 @@
 ---
 name: logos-distributed-debugging
-description: "Use when a Logos Delivery / Waku multi-writer sync app \"syncs nothing\", receives partially, or hangs, and a single silent `return` hides which stage failed. A method playbook: seven moves to localize a failure across the layered receive/reconcile chain (instrument each boundary, listen twice on one event, fingerprint before blaming the network, correlate both directions, read metrics without trusting zero, verify on the real path). Transport facts (channel API, subscribe-by-content-topic, the silent-failure gates, self-echo, RBSR) live in the sibling skill logos-reliable-channels; this skill is how you find where the pipeline stops."
+description: "Use when a Logos Delivery / Waku multi-writer sync app \"syncs nothing\", receives partially, or hangs, and a single silent `return` hides which stage failed. A method playbook: triage the cheap explanations first (versions, which repo/build is installed, a known-good peer as oracle), then seven moves to localize a failure across the layered receive/reconcile chain (instrument each boundary, listen twice on one event, fingerprint before blaming the network, correlate both directions, read metrics without trusting zero, verify on the real path), plus on-device timing instrumentation for bugs that only reproduce on a phone and the fixed-duration-stall = timeout rule for hangs (blocking IPC, a module calling another from inside its own event callback). Transport facts (channel API, subscribe-by-content-topic, the silent-failure gates, self-echo, RBSR) live in the sibling skill logos-reliable-channels; this skill is how you find where the pipeline stops."
 ---
 
 Sync over Logos Delivery (Waku relay + SDS Reliable Channels) fails **silently**: every drop is a bare `return`, so "no peer on my topic", "traffic arrives but decrypts to nothing", "the channel layer never fires", and "reassembly errored" all present identically — a UI that just says *not up to date*. This is a **method** playbook. It does not re-explain the transport; the channel API, subscribe-by-content-topic rule, the silent-failure gates, self-echo semantics, payload-encoding convention, and RBSR mechanics all live in **logos-reliable-channels**. This skill is how you *localize* a failure across the chain and prove where it stops, for any multi-writer Logos app (shared calendars, notes, trackers, budgets, Q&A).
 
-**The chain** is always: transport callback → payload extracted → decrypted/authenticated with the room key → envelope parsed → deduped/folded — plus a **reconcile** half that decides *behind vs up-to-date*. A failure sits at exactly one boundary. The seven moves below find which.
+**The chain** is always: transport callback → payload extracted → decrypted/authenticated with the room key → envelope parsed → deduped/folded — plus a **reconcile** half that decides *behind vs up-to-date*. A failure sits at exactly one boundary. The seven moves below find which — after Move 0 has ruled out the boring causes.
 
 ---
+
+## Move 0 — Triage: rule out the cheap explanations first
+
+Most "it's broken" reports in this ecosystem were not logic bugs. Spend five minutes on these before opening a debugger:
+
+- **What is actually installed?** The version on the device/host, not the one you built. View and core are separate packages (a newer view calling a method an older core lacks returns the host's `{"error":"Invalid response"}`); a phone may still run last week's APK. Ask for, or read, the running version.
+- **Do the peers run compatible builds?** A hub one delivery version behind the clients meshed fine and still never converged (it couldn't reassemble their segmented catch-up). Compare delivery/transport versions on every node in the conversation.[^t1]
+- **Did the publish reach the place the client reads?** Wrong repo, stale index, a CDN still serving the old index, a URL host the TLS cert doesn't cover. "Update not offered" is usually here (see `logos-publish-artifacts`).
+- **Is the network down, or is this client off it?** One client's "no mesh peer" is one witness. Ask a known-good, always-on node (a headless hub): if *it* is relaying live traffic on the shard, the fleet is up and the failing client is the problem — usually its config (no `entryNodes`, wrong preset/cluster).[^t2]
+- **Is it reproducible on the user's path?** GUI repo install ≠ CLI local install ≠ your harness. Reproduce the exact path, with the tool version matching their runtime, against a known-good reference (an official package that works) — or say plainly that you couldn't.[^t3]
+
 
 ## Move 1 — Walk the layered chain
 
@@ -85,6 +96,27 @@ Then **re-read the signals that lie**:
 - all-duplicates looks like failure but is convergence (`dup>0, new=0` is *healthy*).
 - traffic arriving ≠ caught up (Move 5).
 
+## Move 8 — Can't reproduce it locally? Instrument the real path on the device
+
+When a phone bug ("takes 10 s", "stuck", "slow") doesn't reproduce on the dev box, **stop guessing**. Each plausible fix you ship blind costs a release and a user round-trip, and may improve something real while missing the cause.
+
+1. Wrap each step of the suspect path in `Date.now()` deltas, finely enough that **one number** will point at the culprit (`write=[sign/seal/send] refresh=[load/fold/render]`).
+2. Surface the result **on the device**: a toast, *and* copy it to the clipboard — a toast is too fast to write down, and the user should be able to paste the line straight back. A "copy diagnostics" button on a debug panel does the same for counters.
+3. Ship a throwaway instrumentation build; the user reproduces once and pastes.
+4. Fix the step the numbers name; strip the instrumentation; ship the clean fix.
+
+Read the shape of the numbers: a **constant** duration (always ~10 s, ~20 s) points at a timeout; a duration that **grows with data** points at compute or IO (re-folding a log, scanning storage).[^t4]
+
+## Move 9 — A fixed-length stall is a timeout: find the blocking call
+
+A UI that freezes for a near-constant time (often **~20 s**, the cross-module IPC timeout), buttons that "stop working" and then recover, a hub heartbeat with ~20 s gaps — that's a **synchronous call waiting for a reply**, not a crash. No try/catch fixes it, because nothing throws. The known sources:
+
+- **A view's blocking `logos.callModule`** while the core is busy → use `callModuleAsync` only (`logos-basecamp-module`).
+- **A core's synchronous call into another module on the event-loop thread** (`send`, `getNodeInfo`): a lightpush attempt with no lightpush peers can stall for seconds → use the `…Async` variants and handle the result in the callback.[^t5]
+- **A module calling another module from inside that module's own event callback.** Each call runs in the target, but the reply can't arrive while the callback is still on the stack, so every call waits out the full timeout — and events emitted meanwhile are **lost**, which can wedge a state machine. In the handler, only record state; defer the calls with `QTimer::singleShot(0, <QObject on the loop thread>, fn)` (a bare `singleShot(0, fn)` may never fire off-loop).[^t6]
+
+Log timestamps around each call show the gap directly (`destroy :48 → init :09 → start :29` = three 20 s waits).
+
 ---
 
 ## Grep-able log markers (build them in from day one)
@@ -131,3 +163,10 @@ All evidence is from the KYM project (a local-first p2p budget on Logos), used h
 [^5]: `kym_core/src/kym_core_impl.cpp` `bytesPayload()`, `deliverySend()`, and the `onMessageReceived`/`onChannelMessageReceived` `toWire` lambdas. Send probes array (repr 1, `bytesPayload`) → string (repr 2) and caches the winner (`m_sendRepr`), `KYM_SEND_ARRAY` forces array; receive accepts string, `number[]`, and `{_bytes: <base64>}` object shapes — the `{_bytes}` wrapper was the single root cause behind a class of "second peer received nothing" failures (memory `kym-sync-root-cause-bytes-payload`). github.com/vpavlin/kym/blob/main/kym_core/src/kym_core_impl.cpp — proves the probe-and-cache send rule and the accept-all-shapes receive rule (Move 2 table row 2, and the send-side probe section).
 
 [^6]: The peer/mesh gauge under-report is an observed-behavior caveat, not a code assertion: mobile↔hub SDS channel sync was proven working end-to-end (memory `kym-mobile-channels-working`) and the headless hub ingested live edits (memory `kym-headless-hub` / `kym-hub-runner`) in runs where the parsed `libp2p_peers` gauge read 0. Hence Move 6 treats a zero reading as inconclusive and cross-checks the receive counters ([^1]/[^2]) rather than the older render-time `peers==0 ⇒ "no peers"` string in `refreshPeerCount` ([^4]).
+
+[^t1]: Scala VPS hub, 2026-09-30: delivery_module 0.1.3 on the hub vs 0.1.4 on the clients; a calendar added to the hub stayed empty until the hub was upgraded. Memory `scala-vps-hub`.
+[^t2]: 2026-08-07 qaku outage: phone `shard -, mesh 0` and a Basecamp "no mesh peer" on all shards while the always-on kym hub was relaying shards 0/2/4/7 — the fleet was up; `logos.dev` had moved to cluster 3 and new nodes dialled it with the cluster-2 preset. Fix: `preset: "logos.test"`. Memory `logos-fleet-health-oracle`.
+[^t3]: KYM Basecamp variant issue, 2026-07-19: "fixed" was claimed three times from proxies (a dev store, `lgpm`) before reproducing the user's repo-install path with `lgpd` and diffing against an official package. Memory `verify-before-claiming-fixed`.
+[^t4]: Scala mobile 14 s edit lag, 2026-09: two blind fixes missed; one instrumented build printed `refresh=13459 [cals=4161 evts=6726 alias=2572]` → a fold cache took it to ~1 s. Memory `on-device-timing-instrumentation`; copy-to-clipboard debug panels: `LoamDebug` (loam-transport).
+[^t5]: kym_core 0.5.8: synchronous `send`/`getNodeInfo` from the snapshot poll froze every button; the hub heartbeat stalled ~21 s → async variants, max gap 4 s. Memory `kym-stuck-buttons-async-delivery`.
+[^t6]: Scala core 0.9.32, storage restart inside `onStorageStop`: destroy/init/start each waited 20 s and the `storageStart` event was lost; deferring via `QTimer::singleShot(0, m_resyncTimer, …)` made it ~20 ms. Memory `module-calls-inside-event-callbacks`.

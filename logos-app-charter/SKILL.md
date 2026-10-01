@@ -113,7 +113,7 @@ for a headless node.
   **before** building or they're invisible (and the old manifest ships).
 - Reuse `logos-publish-artifacts` (+ the app's own publish scripts); don't hand-roll.
 
-### 10. Views never block, and never render peer text as markup
+### 10. Never block, never render peer text as markup, never fail silently
 - **No blocking IPC in a view, ever.** Every cross-module call from QML goes through
   `logos.callModuleAsync` (one helper), polls are single-flight, action buttons guard
   double-fire. *Why:* a synchronous `callModule` freezes the whole view for up to 20 s
@@ -122,6 +122,13 @@ for a headless node.
   renders HTML-looking strings and fetches remote `<img>` the moment they're shown — one crafted
   title leaks every reader's IP. Gate with `qml-plaintext.py --check`.
 - Mechanics: `logos-basecamp-module` (§ no blocking calls, § plain text).
+
+- **Every outcome is visible.** Each action reports success or a human-readable failure;
+  cores return `{ok, error}` and never throw across IPC; a write the fold would drop is
+  refused up front, not stored and silently discarded; long operations end in done or
+  failed, never an endless spinner. *Why:* the transport already fails silently — the app
+  is the only place a user can learn something went wrong. Mechanics:
+  `logos-basecamp-module` (§ error handling), `logos-distributed-debugging`.
 
 ### 11. Run the same versions everywhere a node runs
 A hub, a desktop and a phone that sync together must run compatible delivery/transport builds.
