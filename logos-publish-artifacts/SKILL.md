@@ -99,6 +99,21 @@ Check before assuming which key an app carries:
 apksigner verify --print-certs repo/<app>-<code>.apk | grep 'Signer #1 certificate DN'
 ```
 
+## Republishing the SAME version (adding a platform, fixing a packaging mistake)
+
+Normally every republish bumps the version. The exception is adding platforms to a package that's already out (`logos-multiplatform-modules`): same code, same version, more variants inside. Every place that caches by version then needs the old bytes **replaced**, not added beside:
+- **Install repo index:** replace the existing same-version entry, don't append a second one (Basecamp would show the module twice or pick the stale hash).
+- **Catalog release asset:** the per-version release already holds `<name>-<ver>.lgx`; upload with `gh release upload … --clobber`, or the URL keeps serving the old bytes while the index lists the new sha256 → Basecamp refuses the install.
+- **Verify by downloading**, from each public index, every file it lists, and compare its sha256 with the index entry. Matching sizes or versions prove nothing here: the version is the same on purpose.
+
+`publish-public-basecamp.py` (next to this file) does both public surfaces this way: additive, same-version entries replaced, `--clobber` on an existing release, `--dry` to preview, and a fallback that fetches the LAN `.lgx` over loopback when the LAN hostname doesn't resolve on the publishing box. Feed it the LAN index (`lan.json`) and the current catalog (`cat.json`) in `$SP`.
+
+**raw.githubusercontent.com caches files for ~5 minutes.** Right after pushing the install repo, the raw URL can serve the *old* `index.json` next to the *new* `.lgx` (a sha mismatch that fixes itself). Check what was actually pushed with `gh api repos/<owner>/<repo>/contents/<path>`, then wait for the CDN and re-verify before calling it done. The storefront website is a separate build: re-run its workflow if the card is stale.
+
+## The LAN repo's URL host must be a name the TLS cert covers
+
+The `.lgx` URLs in a LAN `index.json` embed a host. `publish.sh` used to take the machine's *first IP*, but a box with several addresses can reorder them after a reboot, and an IP the self-signed cert doesn't list makes **every download fail in Basecamp** ("download failed for <module>") while the index looks fine. `publish.sh` now reuses the host the repo's existing `logos-repo.json` already advertises; set `REPO_HOST` explicitly on a new repo, to the name in the cert's SAN.
+
 ## Where else this applies
 Any self-hosted Logos distribution: a household LAN repo, a team's internal repo, or a public catalog repo whose index points at GitHub-release artifact URLs (swap `--lgx` local paths for released URLs and regenerate the index the same way). The Basecamp-index and F-Droid-metadata rules are identical regardless of app domain.
 

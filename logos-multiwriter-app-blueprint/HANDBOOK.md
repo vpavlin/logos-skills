@@ -128,7 +128,7 @@ Two packages, versioned separately:[^19]
 - **view** (`type:"ui_qml"`, `view:"Main.qml"`, depends on the core) — a thin pure-QML surface.
 
 The bridge:
-- view → core: `logos.callModule("<core_name>", method, args)`.[^20]
+- view → core: `logos.callModuleAsync("<core_name>", method, args, callback, timeoutMs)` — never the blocking `logos.callModule` (it freezes the view; see `logos-basecamp-module`).[^20]
 - core → view: emit module events; view listens via `logos.onModuleEvent("<core_name>", "stateChanged")` and re-polls.[^20]
 
 Package with the module builder to a portable `.lgx` (linux-amd64 variant).[^21]

@@ -40,7 +40,11 @@ set -euo pipefail
 BASECAMP_REPO="${BASECAMP_REPO:-$HOME/vpavlin-home/basecamp}"
 REPO_NAME="${REPO_NAME:-vpavlin-home}"
 REPO_DISPLAY="${REPO_DISPLAY:-vpavlin @ home}"
-REPO_HOST="${REPO_HOST:-$(hostname -I | awk '{print $1}')}"
+# Host for the .lgx URLs. Default: the host the repo's EXISTING catalog already advertises (its TLS
+# cert covers that name), else the first IP. Never "first IP" blindly: a box with several addresses
+# can reorder them after a reboot, and a URL host the cert doesn't cover = "download failed" in Basecamp.
+_cat_host=$(python3 -c "import json,sys,urllib.parse;print(urllib.parse.urlparse(json.load(open(sys.argv[1]))['indexUrl']).hostname or '')" "$BASECAMP_REPO/logos-repo.json" 2>/dev/null || true)
+REPO_HOST="${REPO_HOST:-${_cat_host:-$(hostname -I | awk '{print $1}')}}"
 REPO_PORT="${REPO_PORT:-8444}"
 FDROID_HOME="${FDROID_HOME:-$HOME/fdroid}"
 FDROID_BIN="${FDROID_BIN:-$HOME/fdroid-venv/bin/fdroid}"
@@ -131,21 +135,17 @@ Summary: ${APK_SUMMARY:-Logos app}
 Description: |-
   ${APK_SUMMARY:-A Logos app.}
 ${APK_SOURCE:+SourceCode: $APK_SOURCE}
-CurrentVersionCode: 2147483647
 YML
     echo "  + fdroid metadata: metadata/${APK_PKG}.yml (created)" >&2
   fi
-  # Self-hosted repos are single-latest — always suggest the newest APK. A stale
-  # CurrentVersionCode pinned to a PREVIOUS build makes `fdroid update` emit
-  # suggestedVersionCode = that old code, so F-Droid sees the new APK in the repo
-  # but NEVER OFFERS IT AS AN UPDATE ("it's there but no update"). Force the
-  # always-newest placeholder on every publish so an existing/pinned metadata
-  # can't silently strand a release.
-  if grep -q '^CurrentVersionCode:' "$META"; then
-    sed -i 's/^CurrentVersionCode: .*/CurrentVersionCode: 2147483647/' "$META"
-  else
-    echo 'CurrentVersionCode: 2147483647' >> "$META"
-  fi
+  # Self-hosted repos are single-latest — always suggest the newest APK. Do NOT pin
+  # CurrentVersionCode at all: with NO pin, `fdroid update` sets suggestedVersionCode =
+  # the HIGHEST real APK versionCode, which F-Droid offers as the update. The old
+  # placeholder 2147483647 turned out to be WORSE: it points at a versionCode that no
+  # APK has, so F-Droid can't resolve a suggested version and offers NO update at all
+  # ("app is there but no update") — confirmed 2026-09-11 on the real phone. So strip
+  # any CurrentVersionCode line a prior publish/metadata left behind.
+  sed -i '/^CurrentVersionCode:/d' "$META"
   # Name the repo copy by APPLICATION ID, not the build's generic basename
   # (app-release.apk). Every app's gradle output is "app-release.apk", so copying by
   # basename made each app's publish CLOBBER the previous app's file in repo/, and

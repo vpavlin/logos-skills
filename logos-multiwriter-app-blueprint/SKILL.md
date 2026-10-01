@@ -25,7 +25,7 @@ Stand up a NEW multi-writer, offline-convergent Logos app: a **Basecamp core+vie
 1. **Contract + engine + fold** (multiwriter-sync) — pure, in-process, no network. Convergence property test is the gate.
 2. **Crypto + wire envelope** (multiwriter-sync) — seal/open, topic derivation.
 3. **Reliable-channel transport** (reliable-channels) — two desktop cores converge over the wire.
-4. **Basecamp core+view** (basecamp-module) — render the fold; wire edits through `callModule`.
+4. **Basecamp core+view** (basecamp-module) — render the fold; wire edits through `callModuleAsync` (never the blocking `callModule`); render peer text as plain text.
 5. **Headless hub** — same core, run standalone for always-on availability.
 6. **Mobile** (mobile-app) — embed the node, join the same channel, converge with desktop + hub.
 7. **Instrument throughout** (distributed-debugging) — counters from step 3 onward.
