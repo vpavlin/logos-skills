@@ -126,12 +126,14 @@ if [ -n "$APK" ]; then
   mkdir -p "$FDROID_HOME/metadata"
   META="$FDROID_HOME/metadata/${APK_PKG}.yml"
   if [ ! -f "$META" ]; then                       # REQUIRED or the index comes out empty
+    # YAML-quote a one-line value (a ':' or '#' in a name/summary otherwise breaks `fdroid update`).
+    yq_str() { python3 -c 'import json,sys; print(json.dumps(sys.argv[1]))' "$1"; }
     cat > "$META" <<YML
 AuthorName: ${USER}
 Categories:
   - ${APK_CATEGORY}
-Name: ${APK_NAME:-$APK_PKG}
-Summary: ${APK_SUMMARY:-Logos app}
+Name: $(yq_str "${APK_NAME:-$APK_PKG}")
+Summary: $(yq_str "${APK_SUMMARY:-Logos app}")
 Description: |-
   ${APK_SUMMARY:-A Logos app.}
 ${APK_SOURCE:+SourceCode: $APK_SOURCE}
