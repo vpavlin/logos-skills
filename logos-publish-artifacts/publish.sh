@@ -80,6 +80,18 @@ if [ "${#LGXS[@]}" -gt 0 ]; then
     # repo lists ONE .lgx per module; a versioned filename would accumulate and the
     # index (which lists every *.lgx) would show duplicate entries for the module.
     dest="logos-${mname}-module.lgx"
+    # Same version, different bytes = an update NOBODY receives: Basecamp treats an installed version
+    # as current and never re-downloads it. Refuse unless that's intended — adding platforms to an
+    # already-published version (logos-multiplatform-modules): ALLOW_SAME_VERSION=1.
+    if [ -f "$BASECAMP_REPO/$dest" ] && ! cmp -s "$lgx" "$BASECAMP_REPO/$dest"; then
+      _ver() { tar xzOf "$1" manifest.json 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('version',''))" 2>/dev/null; }
+      oldv=$(_ver "$BASECAMP_REPO/$dest"); newv=$(_ver "$lgx")
+      if [ "$oldv" = "$newv" ] && [ "${ALLOW_SAME_VERSION:-0}" != 1 ]; then
+        echo "REFUSED: $mname $newv is already published with DIFFERENT contents — bump the version" >&2
+        echo "  (metadata.json \"version\"), or set ALLOW_SAME_VERSION=1 if you are only adding platforms." >&2
+        exit 1
+      fi
+    fi
     install -m644 "$lgx" "$BASECAMP_REPO/$dest"
     echo "  + basecamp: $dest  (${mname} $(tar xzOf "$lgx" manifest.json 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin).get('version','?'))" 2>/dev/null))" >&2
   done

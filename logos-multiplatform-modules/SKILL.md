@@ -57,7 +57,7 @@ gh release view <tag> --repo logos-co/logos-basecamp --json assets -q '.assets[]
    package's variants come out byte-identical. Get `lgx` with
    `nix build github:logos-co/logos-package -o ~/lgxtool`. `lgx verify` saying "Package is
    unsigned" is normal for these packages.
-4. **Republish the same version** to every repo users install from (`logos-publish-artifacts`).
+4. **Republish the same version** to every repo users install from (`logos-publish-artifacts`; `ALLOW_SAME_VERSION=1 publish.sh …`, since the script otherwise refuses a same-version package with new contents).
    Because the version doesn't change, overwrite the existing file *and* its index entry — see
    that skill's "same-version republish" section — then download each published file and check
    its sha256 against the index.

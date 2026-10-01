@@ -101,7 +101,7 @@ apksigner verify --print-certs repo/<app>-<code>.apk | grep 'Signer #1 certifica
 
 ## Republishing the SAME version (adding a platform, fixing a packaging mistake)
 
-Normally every republish bumps the version. The exception is adding platforms to a package that's already out (`logos-multiplatform-modules`): same code, same version, more variants inside. Every place that caches by version then needs the old bytes **replaced**, not added beside:
+Normally every republish bumps the version — and `publish.sh` enforces it: a Basecamp package whose name and version are already in the repo with **different contents** is refused ("REFUSED: … bump the version"), because Basecamp never re-downloads a version it already has, so that update would reach nobody. The exception is adding platforms to a package that's already out (`logos-multiplatform-modules`): same code, same version, more variants inside. Pass `ALLOW_SAME_VERSION=1` to `publish.sh` for this case. Every place that caches by version then needs the old bytes **replaced**, not added beside:
 - **Install repo index:** replace the existing same-version entry, don't append a second one (Basecamp would show the module twice or pick the stale hash).
 - **Catalog release asset:** the per-version release already holds `<name>-<ver>.lgx`; upload with `gh release upload … --clobber`, or the URL keeps serving the old bytes while the index lists the new sha256 → Basecamp refuses the install.
 - **Verify by downloading**, from each public index, every file it lists, and compare its sha256 with the index entry. Matching sizes or versions prove nothing here: the version is the same on purpose.
