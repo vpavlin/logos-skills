@@ -96,6 +96,19 @@ gh release view <tag> --repo logos-co/logos-basecamp --json assets -q '.assets[]
   sources). Basecamp also *requires* a current value on install ("Package is unsigned" is the
   misleading error), so align to the value of the base package you already ship and know works.
   The merge script does this.[^mv]
+- **`lgx merge` refuses: contracts differ (builder 0.3.x).** Packages from builder 0.3.1 carry the
+  module's LIDL contract under `assets/lidl/`, and merge refuses packages whose contract bytes
+  differ. Build every platform with the **same builder rev** (the same flake.lock), not "whatever the
+  runner resolved".[^lidl]
+- **A library the host doesn't ship.** The portable bundle copies non-Qt libraries (OpenSSL, Boost)
+  and assumes the host provides Qt — but Basecamp's AppImage ships ~80 Qt libraries and not, for
+  example, QtBluetooth, so a BLE module failed to load (`libQt6Bluetooth.so.6: cannot open shared
+  object file`) and took every module depending on it down with it. Before shipping, compare each
+  module's `NEEDED libQt6*` (`readelf -d`) against the target Basecamp's bundled libs
+  (`--appimage-extract`, then list `usr/lib`). Fix in the build (bundle the library with
+  RUNPATH `$ORIGIN`), or patch a built package with `lgx add --variant <v>` — it replaces the whole
+  variant, so pass all the old files plus the new one; it recomputes the hashes. Check the other
+  platforms' variants too: each needs its own copy of the library.[^qtbt]
 - **The library inside differs by platform.** If the Linux package was built from a patched or
   local fork of a native library and CI builds upstream, the platforms now run different code.
   Record which build each variant came from; publish the patched fork so it's reproducible.[^fork]
@@ -114,3 +127,5 @@ build-then-merge path takes in Windows once the stack is on a builder that cross
 [^kc]: `vpavlin/keycard-basecamp` branch `macos-build` (27c0cdf): the darwin-only `NIX_CFLAGS_COMPILE` line for keycard-qt; loam_core built with `--override-input keycard github:vpavlin/keycard-basecamp/27c0cdf…`.
 [^mv]: Memory `lgx-manifestversion-0-3-0` (Basecamp refuses manifestVersion 0.2.0); macOS CI stamped 0.6.0 (storage_module) and 0.2.0 (keycard, keycard-ui) where the Linux packages say 0.3.0.
 [^fork]: delivery_module 0.1.4 on Linux bundles `liblogosdelivery v0.38.1-ge91aaa` (a locally patched build with Android fixes); the macOS/ARM variants bundle upstream `8ad99f1`. Functionally equivalent on desktop, recorded in `loam-basecamp/docs/delivery-upstream-vs-fork.md`.
+[^lidl]: `loam-basecamp` `port/0.3` `docs/port-0.3/analysis-basecamp-builder.md` § Packages ("0.3.1 ships contracts in `assets/lidl/`; `lgx merge` refuses differing contract bytes → same builder on every platform").
+[^qtbt]: Memory `ble-mesh-qtbluetooth-bundle` (ble_mesh 0.1.0 failed on stock Basecamp 0.3.1; 0.1.1 bundled `libQt6Bluetooth.so.6` from qtconnectivity 6.9.2 with RUNPATH `$ORIGIN` via `lgx add`, load-tested against the extracted AppImage libs; ble_mesh 0.2.0 bundles it from the flake, memory `port-0-3`). The scan of 20 modules found it the only missing Qt lib.

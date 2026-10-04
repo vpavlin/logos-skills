@@ -14,11 +14,16 @@ Sync over Logos Delivery (Waku relay + SDS Reliable Channels) fails **silently**
 Most "it's broken" reports in this ecosystem were not logic bugs. Spend five minutes on these before opening a debugger:
 
 - **What is actually installed?** The version on the device/host, not the one you built. View and core are separate packages (a newer view calling a method an older core lacks returns the host's `{"error":"Invalid response"}`); a phone may still run last week's APK. Ask for, or read, the running version.
+- **Did something upgrade it behind your back?** With several package repos added, Basecamp installs the **highest version across all of them** — a delivery fork at 0.1.4 was replaced by the official 0.3.x overnight and every app stopped syncing ("worked yesterday"). First question for "delivery connects, nothing syncs" on a desktop: which `delivery_module` version is installed, from which repo?[^t7]
+- **Did the deploy copy what you built?** Nix build outputs all have mtime 1970, so `rsync -a` skips a changed file whose size didn't change — a hub kept an old `manifest.json` and plugin after two "successful" deploys. Deploy with `rsync --checksum` (or `cp`) and compare `md5sum` on both ends.[^t8]
 - **Do the peers run compatible builds?** A hub one delivery version behind the clients meshed fine and still never converged (it couldn't reassemble their segmented catch-up). Compare delivery/transport versions on every node in the conversation.[^t1]
 - **Did the publish reach the place the client reads?** Wrong repo, stale index, a CDN still serving the old index, a URL host the TLS cert doesn't cover. "Update not offered" is usually here (see `logos-publish-artifacts`).
 - **Is the network down, or is this client off it?** One client's "no mesh peer" is one witness. Ask a known-good, always-on node (a headless hub): if *it* is relaying live traffic on the shard, the fleet is up and the failing client is the problem — usually its config (no `entryNodes`, wrong preset/cluster).[^t2]
 - **Is it reproducible on the user's path?** GUI repo install ≠ CLI local install ≠ your harness. Reproduce the exact path, with the tool version matching their runtime, against a known-good reference (an official package that works) — or say plainly that you couldn't.[^t3]
 
+
+- **Is the platform refusing, not your code?** A few log lines mean "not a sync bug": `auth token not recognized` (Logos 0.3 runtime rejecting a module's calls made from `onContextReady`, or a module built on the old builder), `Failed to create Delivery context` (config shape the installed delivery rejects — flat vs layered), a v0.3.0 node that **receives but every send fails** (RLN on, no membership — `logos-rln-budget`), `libQt6…: cannot open shared object file` (a library the host doesn't ship).[^t9]
+- **Is your check itself lying?** A zero from a tool is only evidence if the tool could have found it: `strings | grep` misses UTF-16 strings in a Hermes bundle, a peer gauge reads 0 while sync flows (Move 6). Confirm the tool's output shape before rebuilding on the strength of a zero.
 
 ## Move 1 — Walk the layered chain
 
@@ -170,3 +175,6 @@ All evidence is from the KYM project (a local-first p2p budget on Logos), used h
 [^t4]: Scala mobile 14 s edit lag, 2026-09: two blind fixes missed; one instrumented build printed `refresh=13459 [cals=4161 evts=6726 alias=2572]` → a fold cache took it to ~1 s. Memory `on-device-timing-instrumentation`; copy-to-clipboard debug panels: `LoamDebug` (loam-transport).
 [^t5]: kym_core 0.5.8: synchronous `send`/`getNodeInfo` from the snapshot poll froze every button; the hub heartbeat stalled ~21 s → async variants, max gap 4 s. Memory `kym-stuck-buttons-async-delivery`.
 [^t6]: Scala core 0.9.32, storage restart inside `onStorageStop`: destroy/init/start each waited 20 s and the `storageStart` event was lost; deferring via `QTimer::singleShot(0, m_resyncTimer, …)` made it ~20 ms. Memory `module-calls-inside-event-callbacks`.
+[^t7]: 2026-10-02: Basecamp (with the official catalog added) upgraded `delivery_module` 0.1.4 (fork) → 0.3.x (upstream); the `messageReceived` signature change plus RLN meant no message reached the transport. Workaround: reinstall 0.1.4; durable fix: version the fork above upstream. Memory `delivery-upstream-vs-fork`.
+[^t8]: Scala VPS hub, 2026-09-30. Memory `nix-rsync-mtime-trap`.
+[^t9]: `loam-basecamp` `port/0.3` `docs/port-0.3/analysis-basecamp-builder.md` (auth-token rejection), memory `scala-gui-delivery-flat-config` (layered config rejected by the 0.1.x fork), `analysis-delivery.md` § 2 (RLN, sends fail), memory `ble-mesh-qtbluetooth-bundle`; Hermes UTF-16: memory `hermes-utf16-string-grep`.

@@ -1,6 +1,6 @@
 ---
 name: logos-app-charter
-description: "The house rules for how WE build Logos/Loam apps (perun, kym, qaku, scala, kith, shrooms) — the non-negotiable principles and the why behind them, so a fresh app or a fresh agent doesn't rediscover them. Read at project kickoff, when scoping a new app or feature, when deciding a cross-cutting question (which platforms, where state lives, how sync works, how identity/crypto works, how to publish), or when onboarding another agent to this codebase's conventions. Covers: always ship Basecamp desktop + Android together; build on Loam (loam_core transport, loam-sync CRDT brain, deterministic-nonce crypto, loam-keycard identity); local-first and offline-first as hard requirements; append-only event-log CRDT with LWW/tombstones/edit-supersede; zero-trust household sealing; swappable infra seams (transport, sync, storage); the publish + docs/ADR discipline; and which sibling skill to load for each layer. This is the CHARTER/index of conventions; the layer skills (logos-multiwriter-app-blueprint, logos-multiwriter-sync, logos-reliable-channels, logos-basecamp-module, logos-mobile-app, logos-publish-artifacts, logos-multiplatform-modules, logos-distributed-debugging, loam-integrate-app, loam-update-app, loam-keycard) carry the mechanics."
+description: "The house rules for how WE build Logos/Loam apps (perun, kym, qaku, scala, kith, shrooms) — the non-negotiable principles and the why behind them, so a fresh app or a fresh agent doesn't rediscover them. Read at project kickoff, when scoping a new app or feature, when deciding a cross-cutting question (which platforms, where state lives, how sync works, how identity/crypto works, how to publish), or when onboarding another agent to this codebase's conventions. Covers: always ship Basecamp desktop + Android together; build on Loam (loam_core transport, loam-sync CRDT brain, deterministic-nonce crypto, loam-keycard identity); local-first and offline-first as hard requirements; append-only event-log CRDT with LWW/tombstones/edit-supersede; zero-trust household sealing; swappable infra seams (transport, sync, storage); the publish + docs/ADR discipline; and which sibling skill to load for each layer. This is the CHARTER/index of conventions; the layer skills (logos-multiwriter-app-blueprint, logos-multiwriter-sync, logos-reliable-channels, logos-basecamp-module, logos-basecamp-0.3-port, logos-headless-logosctl, logos-mobile-app, logos-publish-artifacts, logos-fdroid, logos-multiplatform-modules, logos-storage, logos-rln-budget, logos-distributed-debugging, loam-integrate-app, loam-update-app, loam-keycard) carry the mechanics. Also covers: never await the wire send, design for an RLN message budget, version-scoped delivery config, and the cross-repo auto-upgrade trap."
 ---
 
 # Logos app charter — how we build, and why
@@ -42,8 +42,9 @@ Use the shared Loam bits instead of hand-rolling per app:
 - *Integration guides:* **Android** shared node + owner approval — `loam/INTEGRATE.md` +
   the `loam-integrate-app` skill (the `preferServiceBackend` ordering + consent gotchas).
   **Basecamp/desktop** — `loam-basecamp/INTEGRATE.md` (depend on the `loam_core` module:
-  the `start`/`join`/`sendSealed`/`received`/`statusChanged` surface, the layered delivery
-  cfg with the required `discv5-udp-port`, no binder approval in-process).
+  the `start`/`join`/`sendSealed`/`received`/`statusChanged` surface, no binder approval
+  in-process). The delivery config shape depends on the installed `delivery_module`: **flat** on
+  the 0.1.x fork (the layered shape is rejected there), **layered** on upstream v0.3.0 — see rule 11.
 
 ### 3. Local-first is a hard requirement
 State is the user's; it lives **on the device first and always**. Authoring **never blocks
@@ -51,14 +52,22 @@ on the network** and never fails without it.
 - *Why:* the app must be fully usable offline and feel instant; sync is an enhancement, not
   a precondition.
 - *How:* persist locally, then best-effort send; carry an unsynced flag and retry when the
-  receiver comes up. Media bytes are stored on-device at capture; a server/Codex is a
+  receiver comes up.
+- **Never `await` the wire send in the write path.** Append to the local log, update the UI,
+  return — then send in the background. The send is only the fast path; reconciliation (RBSR)
+  delivers anything the send missed, so waiting on it buys nothing and freezes every edit when the
+  node is slow or absent. Show a "syncing" badge on events not yet on the wire instead.
+- *Also off the edit path:* long loops of awaited native calls (rescheduling hundreds of
+  notifications, IPC) and per-event crypto in the fold (signature verify is ~40 ms on Hermes —
+  memoize it by (pubkey, sig, digest) and persist the memo). Both looked like "sync is slow". Media bytes are stored on-device at capture; a server/Codex is a
   *replication target*, never the source of truth and never on the capture path.
 
 ### 4. Must work offline — and converge later
 Capture, edit, and view work with no network. When peers reconnect they converge with no
 lost writes and no coordinator.
 - *How:* SDS gives ordering/gap/retransmit *within a session*; it does **not** backfill
-  pre-join history (Delivery has no history query for that path) — layer app-level RBSR
+  pre-join history (the 0.1.x fork exposes no store query to modules; v0.3.0's store catch-up
+  returns only what fleet store nodes still hold) — layer app-level RBSR
   (loam-sync) on top for cold-start. If a device shows nothing after joining, that's the
   missing layer, not the network.
 
@@ -108,7 +117,10 @@ for a headless node.
 - **F-Droid:** each app needs `metadata/<applicationId>.yml` or `fdroid update` **drops the
   APK silently**. Bump versionCode and leave `CurrentVersionCode` **unset** (any pin — including
   the old maxint placeholder — strands the update: "app is there, no update offered"). In-place
-  update needs the **same signing key**.
+  update needs the **same signing key**. The repo's `repo_url` is **plain http** (+ fingerprint)
+  unless the host has a publicly trusted cert — a self-signed https address baked into the index
+  breaks adding the repo on new phones. Optional hardware (NFC, camera) is `required="false"`.
+  Depth: `logos-fdroid`.
 - **The nix trap:** a flake only sees **git-tracked** files — `git add` new sources/icons
   **before** building or they're invisible (and the old manifest ships).
 - Reuse `logos-publish-artifacts` (+ the app's own publish scripts); don't hand-roll.
@@ -135,7 +147,16 @@ A hub, a desktop and a phone that sync together must run compatible delivery/tra
 - *Why:* a hub one delivery version behind meshed fine but couldn't reassemble newer clients'
   segmented catch-up — a joined room stayed empty with no error.
 - *How:* upgrade the hubs with the clients; when sync is "connected but empty", compare versions
-  first. When running a fork of an upstream module, keep a written diff against upstream
+  first.
+- **Know which repo can upgrade you.** Basecamp installs the highest version of a package across
+  every repo the user added. A fork that sits below upstream's version number gets "upgraded" to
+  upstream the day a user adds the official catalog — every app stopped syncing that way once.
+  Version a fork above upstream (or rename it), and publish platform-migration test builds to a
+  separate repo.
+- **Version-scope anything the platform changed.** Delivery config (flat on the 0.1.x fork, layered
+  on v0.3.0), the `messageReceived` signature, Storage's call arguments: code against the installed
+  version and write down which one each rule applies to — don't delete the old guidance while users
+  still run it. When running a fork of an upstream module, keep a written diff against upstream
   (what we patch, why, what upstream changed since) so moving back is a plan, not archaeology.
 
 ### 12. Ship every platform Basecamp ships, when it's cheap
@@ -153,7 +174,18 @@ local paths). Say plainly which platforms are untested on real hardware.
 - When a rule here changes or a new pattern proves out, update this skill so the next app
   inherits it.
 
-### 14. Verify before claiming; push when confirmed
+### 14. Design for a message budget (RLN)
+Logos Messaging rate-limits publishers: a membership allows **100 messages per 10-minute epoch,
+per node** — shared by every app on that node, and every segment and retransmit counts. On
+delivery v0.3.0 a node without a membership receives but cannot send.
+- *Why:* a sync design that replays the log message-by-message on every join or answers every
+  request with a broadcast works on an empty network and stalls under RLN.
+- *How:* count messages per user action in the design; catch up from a **snapshot** in Storage
+  and reconcile only the tail; batch small events; answer catch-up requests per peer, throttled;
+  keep blobs out of messages. The transport owns membership and pacing, the sync library owns
+  snapshots and batching, the app owns payload size. Mechanics: `logos-rln-budget`.
+
+### 15. Verify before claiming; push when confirmed
 Reproduce via the user's actual path with the version-matched tool + a known-good comparison
 before saying "fixed" or "works". Push to the remote as soon as a change is confirmed
 working — don't leave confirmed commits local.
@@ -163,8 +195,13 @@ working — don't leave confirmed commits local.
 - **The CRDT/fold/HLC/envelope/hub mechanics:** `logos-multiwriter-sync`.
 - **SDS Reliable Channels (channelCreate/Send, the silent-failure gates):** `logos-reliable-channels`.
 - **Desktop module (mkLogosQmlModule, `.rep`, headless hub, `.lgx`):** `logos-basecamp-module`.
+- **Moving an app to Basecamp 0.3.x / builder 0.3.1 / delivery v0.3.0:** `logos-basecamp-0.3-port`.
+- **Headless nodes and two-node test rigs on the 0.3 runtime (`logosctl`):** `logos-headless-logosctl`.
 - **Mobile embed (JNI, config plugin, F-Droid, "phone receives nothing"):** `logos-mobile-app`.
-- **Publishing artifacts to Basecamp/F-Droid repos:** `logos-publish-artifacts`.
+- **Publishing artifacts to Basecamp/F-Droid repos:** `logos-publish-artifacts`; the F-Droid
+  repo itself (keys, metadata, http repo_url, verifying the served index): `logos-fdroid`.
+- **Attachments, media, log snapshots (Logos Storage):** `logos-storage`.
+- **RLN message budget:** `logos-rln-budget`.
 - **macOS / Linux ARM64 packages (CI build + merge):** `logos-multiplatform-modules`.
 - **"syncs nothing / receives partially" debugging:** `logos-distributed-debugging`.
 - **Adopt the shared node / bump loam-transport:** `loam-integrate-app`, `loam-update-app`.

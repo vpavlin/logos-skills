@@ -20,6 +20,11 @@ Stand up a NEW multi-writer, offline-convergent Logos app: a **Basecamp core+vie
 | **logos-mobile-app** | The phone half: JNI bridge to the prebuilt `liblogosdelivery.so`, the config plugin that survives `expo prebuild`, cross-thread event delivery, F-Droid release. | Adding the phone. Symptoms: "phone receives nothing", "undefined is not a function", release SIGSEGV, node offline. |
 | **logos-distributed-debugging** | Per-stage counters across the receive/reconcile pipeline; telling relay-down from wrong-key from channel-not-firing apart. | The moment anything "syncs nothing" or partially. Keep it open the whole build. |
 | **logos-publish-artifacts** | Distributing built artifacts: `.lgx`(s) → a Basecamp package repo, APK → an F-Droid repo, regenerating the signed indexes (bundled `publish.sh`). | Step 8 / go-live, and any time "the device still shows the old version." |
+| **logos-fdroid** | The self-hosted F-Droid repo: keys, metadata, http `repo_url`, never pinning `CurrentVersionCode`, verifying the served index. | Setting up a repo; "no update offered"; "can't add the repo". |
+| **logos-storage** | Attachments/media/snapshots on Logos Storage: CIDs, the two-id rule, NAT + hub cache, host-owned node on 0.3. | Anything bigger than an event; cold-start snapshots. |
+| **logos-rln-budget** | The RLN message budget (100 msgs / 10 min / node) and how sync must shape traffic. | Designing sync traffic; "receives but can't send" on delivery v0.3.0. |
+| **logos-headless-logosctl** | Headless nodes on the 0.3 runtime: sessions, install/load/call/watch, hubs, two-node test rigs. | Step 5 (hub) and every two-node test on Basecamp 0.3. |
+| **logos-basecamp-0.3-port** | Migrating a 0.2.x app to Basecamp 0.3 / builder 0.3.1 / delivery v0.3.0 / storage 3.0. | Moving an existing app to the 0.3 line. |
 
 ## Build order (each step is testable before the next)
 1. **Contract + engine + fold** (multiwriter-sync) — pure, in-process, no network. Convergence property test is the gate.

@@ -100,8 +100,51 @@ connected=… appId=… | <fallback error>`:
 4. Loam app must be launched + keep-alive running for the register to reach its UI (§3).
 5. `<SharedNodeStatus>` needs its import (runtime crash otherwise).
 6. Build: `expo prebuild --clean` wipes `android/local.properties`; gradle OOMs on the native
-   CMake compile — see `loam-update-app` (restore local.properties, `--no-daemon --max-workers=2
-   -Xmx2g`).
+   CMake compile — see `loam-update-app` (restore local.properties; `--no-daemon --max-workers=2`, heap
+   via `org.gradle.jvmargs` — `-Xmx2g` is not a `gradlew` flag; release lint off, build in the
+   foreground — `logos-mobile-app` § 13).
+
+## After it works: the shared-node traps that cost device sessions
+
+All of these were fixed in `loam-transport`; an app gets the fix by bumping its submodule
+(`loam-update-app`). Know them so you recognise the symptom, and so a new transport doesn't
+reintroduce them.
+
+- **Subscribe before ready must still count.** A room joined before the binding settled hit
+  `if (!ready) return` — the subscribe was dropped *and* never recorded, so the reconnect handler
+  never re-sent it. The shared node then had no owner for that topic and dropped every frame on it
+  as "unowned" (fleet and BLE alike). Record the topic in the joined set unconditionally; send it only
+  when ready; re-subscribe the whole set on connect.[^own]
+- **Re-subscribe when the node comes up, not only when the binding does.** Binding the service
+  succeeds even when the Loam app's node isn't running (Android starts the service process), so the
+  client subscribes into nothing. When the node starts later the binding never dropped, so the
+  "connected" event never fires again. Detect the node going down→up in the periodic peer refresh
+  and re-subscribe then. Symptom: "connected, nothing syncs, unless Loam was started first".[^up]
+- **AIDL is append-only.** Transaction ids follow declaration order. Inserting a method before
+  `metrics()` in the service's `.aidl` shifted its id; every client built against the old file
+  called the new method instead, read no metrics, and showed "Loam isn't running" while the node
+  was fine. Add new methods at the end of the interface, in the service and every client copy.[^aidl]
+- **History on the shared node is a proxied store pull.** The client asks the service
+  (`requestStoreSync`), the service queries the fleet store and delivers results through the normal
+  receive callback, so they fold like live messages. Bound it: only the requesting app's topics,
+  serialized, skip a topic pulled within the last minute, few peers and short timeouts, nothing when
+  offline. An unbounded loop of synchronous native store queries on the shared native-module thread
+  stalled new joins for minutes. Throttle your app's catch-up *answers* too — replays arrive as
+  messages and can trigger answer storms.[^store]
+- **A client can't see the BLE bearer by itself.** Only the Loam host runs the mesh; a client sees
+  what the host reports in its metrics. With Wi-Fi off and BLE carrying traffic, Waku peers/mesh are 0
+  and an app that waits for `mesh > 0` keeps posts "queued". The host now reports a `ble` block and
+  the client counts nearby BLE peers as reachability — don't gate sends on the Waku mesh alone.[^ble]
+- **Payload format changes reach clients through the service.** When desktops moved to a delivery
+  library that wraps channel payloads (`logos-basecamp-0.3-port`), the unwrap had to be applied on
+  the client's path as well, because the service only forwards candidate payloads.[^seg]
 
 Sources: this recipe distills the 2026-08-15 debugging of the co.logos→xyz.vpavlin/Loam rename;
 see memory `loam-shared-delivery-ble`.
+
+[^own]: Memory `loam-ble-receive-unowned-fix` (two-phone proof via the Loam status dump: one phone's `own:` lacked the room topic, its `drop:` listed the room's frames; fix `loam-transport` `dbcf031`, qaku 0.1.67).
+[^up]: Memory `loam-client-resubscribe-on-node-up` (`loam-transport` `61907b1`, scala mobile 0.9.97).
+[^aidl]: Memory `loam-aidl-txn-id-ordering` (Loam 0.0.35 regression, fixed 0.0.36 by moving `requestStoreSync` to the end; device-verified 2026-08-21).
+[^store]: Memory `loam-shared-node-storesync` (ADR 0021 in loam-transport; restored 2026-09-29; join stall fixed in `c77eb84` / Loam 0.0.52, device-confirmed 2026-09-30).
+[^ble]: Memory `loam-client-blind-to-ble` (host `pushMetrics` gains `ble`; client `refreshPeerInfo` treats BLE peers as mesh reachability).
+[^seg]: `loam-transport` `port/0.3` `2a472be` ("segment-compat on the shared-Loam path too (ServiceNode)").
