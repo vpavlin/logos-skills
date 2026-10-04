@@ -184,7 +184,7 @@ Everything above still holds unless noted here. The 0.3 line changes the runtime
 - **The host owns some modules.** Basecamp 0.3 and `logosctl` bundle `storage_module` 3.0 and initialise it themselves from `~/.logos_storage/config.json`; your `init()` is refused. Adopt the host's node instead (`logos-storage`).
 - **Delivery v0.3.0 (upstream) has a different event and config shape** — `messageReceived` gains a `source` argument, start completion arrives as `nodeStarted`, config is layered — and RLN can stop every send. See "Delivery/wire notes" below and `logos-rln-budget`.
 - **Headless = `logosctl`.** `logoscore`/`logos-hub` are replaced by the `logosctl` CLI (sessions, `install`, `module load`, `call`, `watch`). See `logos-headless-logosctl`.
-- **Cross-repo auto-upgrade.** With several repos added, Basecamp offers the **highest version of a package across all of them**. A fork you publish as `delivery_module 0.1.4` will be "upgraded" to the official 0.3.x the moment a user adds the official catalog. Version a fork above upstream (or rename it), and test 0.3 builds from a separate repo so nothing auto-upgrades an 0.2 user.
+- **Cross-repo auto-upgrade.** With several repos added, Basecamp offers the **highest version of a package across all of them**. A fork you publish as `delivery_module 0.1.4` will be "upgraded" to the official 0.3.x the moment a user adds the official catalog. Prefer renaming the fork (or pinning dependency ranges); versioning it above upstream only works until your apps move to upstream, after which the fork outranks upstream the other way. Test 0.3 builds from a separate repo so nothing auto-upgrades an 0.2 user.
 
 ## View ↔ core version skew
 

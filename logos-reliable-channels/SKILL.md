@@ -66,7 +66,7 @@ Content topics auto-shard to a pubsub topic `/waku/2/rs/<cluster>/<shard>` (shar
 2. On join: `subscribeContentTopic(topic)` **then** `channelCreate(topic, topic, deviceId)` — both, in that order.[^8]
 3. Ensure an Encrypt/Decrypt provider exists (no-op if you seal yourself). Don't remove it.[^9]
 4. Seal your payload yourself; hand the sealed bytes to `channelSend`. Nail down the base64 depth and keep it identical across every platform.[^12]
-5. On receive, decode → (open/authenticate) → dedup → apply. Ignore your own `senderId` echoes; tolerate SDS-framed raw `message_received` copies that your open() harmlessly rejects.[^12]
+5. On receive, decode → (open/authenticate) → dedup by event id → apply. Read the author from INSIDE the sealed payload — the event's `senderId` is not the origin (see §5); tolerate SDS-framed raw `message_received` copies that your open() harmlessly rejects.[^12]
 6. Renew only the *subscription* on reconnect, never re-`channelCreate` (that would rebuild SDS state).[^8]
 7. Add app-level reconcile for cold-start backfill.[^16]
 

@@ -35,7 +35,7 @@ def upsert(index, name, ver_entry, keep_history):
 
 for n in NAMES:
     e = lan[n]; ver = e["manifest"]["version"]
-    # The LAN repo is served from THIS box, under a name (jimmy-crib.office.mesh) the box itself may
+    # The LAN repo is served from THIS box, under a LAN name the box itself may
     # not resolve: fetch via loopback when the name doesn't resolve (TLS is unverified here anyway;
     # the sha256 check below is what guarantees we got the right bytes).
     url = e["url"]

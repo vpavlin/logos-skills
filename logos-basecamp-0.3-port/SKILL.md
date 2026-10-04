@@ -25,8 +25,11 @@ module, and the traps found on the way. Module-level rules live in `logos-baseca
 3. **Users can be upgraded under you.** Basecamp installs the highest version of a package across
    every repo the user added. A fork published as `delivery_module 0.1.4` is replaced by the
    official 0.3.x the day a user adds the official catalog — and every app stops syncing. Before
-   anything else, version the fork above upstream (we bumped it to 0.9.0 with identical bytes) and
-   publish 0.3 test builds to a **separate** repo.[^incident]
+   anything else, version the fork above upstream (we bumped it to 0.9.0: same code, with the version embedded in the plugin patched too — the runtime reads that, not just the manifest) and
+   publish 0.3 test builds to a **separate** repo.[^incident] Beware the reverse trap: a fork at 0.9.0 now
+   outranks upstream 0.3.0, so a 0.3 user who also added a repo carrying the fork gets the OLD fork over the
+   delivery their ported apps need. Prefer renaming the fork or pinning dependency ranges (e.g. `^0.3`), and
+   remove the bumped fork from shared repos once the apps have moved.
 
 ## Phase 0 — safe on the current stack
 

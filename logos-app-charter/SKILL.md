@@ -151,8 +151,9 @@ A hub, a desktop and a phone that sync together must run compatible delivery/tra
 - **Know which repo can upgrade you.** Basecamp installs the highest version of a package across
   every repo the user added. A fork that sits below upstream's version number gets "upgraded" to
   upstream the day a user adds the official catalog — every app stopped syncing that way once.
-  Version a fork above upstream (or rename it), and publish platform-migration test builds to a
-  separate repo.
+  Prefer renaming a fork (or pinning dependency ranges); versioning it above upstream works only until the
+  apps move to upstream, then the fork outranks it the other way. Publish platform-migration test builds
+  to a separate repo.
 - **Version-scope anything the platform changed.** Delivery config (flat on the 0.1.x fork, layered
   on v0.3.0), the `messageReceived` signature, Storage's call arguments: code against the installed
   version and write down which one each rule applies to — don't delete the old guidance while users

@@ -70,7 +70,7 @@ Counts say *how many*; a forensic sample says *what*. On the **first** event tha
 sid=<senderId8> pl=arr123 cand=2 openErr[<throw text>]
 ```
 
-If `sid` equals **your own device**, you are seeing only **your own echo** — the peer's traffic isn't reaching you (or you're grepping the echo, not the ingress). That single field distinguishes "not connected" from "connected, wrong key" from "looking at the wrong stream" before you go blame the mesh. Self-echo / senderId semantics: see logos-reliable-channels.
+Identify the **author from inside the decrypted payload** (the channel event's `senderId` is not the origin — see logos-reliable-channels §5). If every decoded author is **your own device**, you are seeing only your own writes coming back over raw relay — the peer's traffic isn't reaching you. That single field distinguishes "not connected" from "connected, wrong key" from "looking at the wrong stream" before you go blame the mesh. Self-echo / senderId semantics: see logos-reliable-channels.
 
 ## Move 5 — Correlate both directions
 
