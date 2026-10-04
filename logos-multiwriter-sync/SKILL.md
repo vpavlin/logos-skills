@@ -70,6 +70,8 @@ A dataset is single-owner until an opt-in `group.init` event; after that each ev
 
 **When you DO add per-event signatures, gate leniently — never drop open content for a bad/absent signature.** Split event types into **participant/open** (anyone in the dataset may write: add a question, upvote, set their own display name) and **gated/privileged** (answer, moderate, admin/role change, config, session control). Verify signatures on *both*, but only **drop** a gated event whose signature fails — an open event with a missing or invalid signature must still be **admitted** (record `verified: false` for the UI to badge, but fold it in). Rationale: signing rolled out incrementally, old clients and cross-version peers send unsigned-but-legitimate open events, and a strict gate on open content silently erases honest participation while buying nothing (open events are un-privileged by definition). The signature there is *provenance for display* — "is this really who it claims" — not an admission gate. Reserve hard sig-dropping for the events where a forged author actually escalates privilege.[^21]
 
+**Canonicalise exactly what goes on the wire.** The signed digest is computed over a canonical JSON of the payload; `JSON.stringify` (and so the wire) *drops* keys whose value is `undefined`, while a hand-written canonicaliser may emit them as `null`. Author and receiver then hash different bytes, `verify` fails, and — because only gated events require a valid signature — exactly one event type silently vanishes on other devices (answers did, questions didn't). Rules: the canonicaliser skips `undefined` keys; payload builders never put an `undefined` value into a signed payload (set only defined keys); and if old events were signed the other way, let `verify` retry once with the type's optional keys as `null` so history still displays. Mirror the rule in every language that signs.[^24]
+
 ---
 
 ## Transport over Logos Delivery
@@ -95,7 +97,7 @@ payload = nonce(12) ‖ ChaCha20-Poly1305(Ke, nonce, plaintext, aad=topic)
 **Carry those sealed bytes on SDS Reliable Channels, not raw relay** — they give ordering, gap detection, retransmit and causal history *inside* the delivery layer (mature, 30+ releases).[^13] The channel API surface (`channelCreate`/`channelSend`/`onChannelMessageReceived`, `channelId == contentTopic == derived topic`, `senderId == deviceId`), the load-bearing **no-op encryption provider** (SDS refuses a channel with no Encrypt provider, and the app already does its own AEAD above), the receive-chain, and the four silent-failure gates that otherwise make a joined channel decode nothing are the sibling skill's material — **see `logos-reliable-channels`**. This skill owns only what rides *inside* the channel: the AEAD envelope above.
 
 ### Backfill: no Store ⇒ you need a hub + set reconciliation
-`liblogosdelivery` exposes **no Waku Store query on desktop**, so someone must be online to re-serve history. Two pieces:[^12][^13]
+On the 0.1.x delivery fork, `liblogosdelivery` exposes **no Waku Store query on desktop**, so someone must be online to re-serve history. (Upstream delivery_module v0.3.0 adds `storeQuery` and replays missed messages by default — useful, but it returns only what fleet store nodes still hold, so the hub + RBSR below remain the guarantee.) Two pieces:[^12][^13]
 
 1. **An always-on headless hub** — the same core as a plain peer, run headless (no GUI); it holds the full log and re-serves on demand. It is an *availability* role, not a canonical authority (the log stays fully replicated).
 
@@ -111,6 +113,10 @@ payload = nonce(12) ‖ ChaCha20-Poly1305(Ke, nonce, plaintext, aad=topic)
 reconcile(A, B, {threshold=8, buckets=16}) → { aNeeds:[id], bNeeds:[id], rounds, controlBytes }
 // order events by (hlc.wall, id); fingerprint = XOR of per-id SHA-256, folded with count, first 16 bytes
 ```
+
+3. **Snapshots for long logs.** Under a message budget (`logos-rln-budget`) replaying a long log message-by-message is the expensive path. A hub writes a deterministic, sealed snapshot of the log to Logos Storage; a joining device fetches it, verifies, ingests (dedup by id), then reconciles only the tail. Same cut → same bytes → same content id, across languages.[^26]
+
+**The write path never waits for the wire.** Because RBSR delivers anything a live send missed, the authoring path is: append locally (flushed — see the table below) → update the UI → send in the background. Awaiting the send froze every edit whenever the node was slow or absent; it bought nothing. Mark not-yet-sent events with a "syncing" badge and clear it when the send resolves or a reconcile re-serves them. And keep the fold cheap: memoize signature verification by `(pubkey, sig, digest)` — it is deterministic in the immutable event — and persist the memo for cold start (per-event secp256k1 verify was ~40 ms on Hermes and dominated a 90-event fold).[^25]
 
 ---
 
@@ -139,6 +145,8 @@ When the same fold runs in two languages (e.g. a JS reference + a C++ core), def
 - [ ] Integers only for exact quantities; assert safe-integer at the fold boundary.[^7]
 - [ ] `checkInvariant` oracle asserted in a 200-trial shuffled-order convergence test; never enforced at merge.[^6][^8]
 - [ ] Authored events flushed to disk **synchronously before** the network send (debounce only remote ingests).[^22]
+- [ ] The write path never `await`s the send; unsent events carry a "syncing" badge; signature verify is memoized.[^25]
+- [ ] Signed payloads never contain `undefined` values; the canonicaliser skips them on every platform.[^24]
 - [ ] If events are signed: gate leniently — verify all, but only DROP privileged/gated events on a bad sig; open/participant events are admitted with `verified:false`, never dropped.[^21]
 - [ ] Transport = app-level AEAD envelope carried on SDS Reliable Channels (channel mechanics, no-op provider, receive gates → `logos-reliable-channels`); hub + RBSR for backfill, minding the two hub gotchas.[^13][^12][^20]
 - [ ] Cross-user sharing: roles admitted deterministically on merge; privacy boundary = which key/dataset.[^16]
@@ -178,3 +186,6 @@ All paths are repo-relative to `github.com/vpavlin/kym` (origin project, used he
 [^21]: `packages/engine/src/engine.mjs` sig-gate — PARTICIPANT events (`question.add`/`upvote`/`profile.set`) are admitted regardless of signature validity (`verified` recorded for display only); GATED events (`answer`/`moderate`/admin/`config`/`session`) require a valid signature or are dropped. Introduced with qaku desktop secp256k1 signing (C++↔JS byte-parity). Provenance: memories `qaku-desktop-signing`, `qaku-sync-fix-kym-parity`.
 [^22]: qaku "vanishing question" root cause — `mobile/src/lib/sessions.ts`: the log write was a **400 ms debounced** `scheduleSave`; a fast kill after publish lost the authored event. Fix = `flushSave` (immediate `writeAsStringAsync`) on append **before** `transport.publishSealed`. NOT a sync/signature bug. Provenance: memory `qaku-mobile-persistence-flush`.
 [^23]: Fleet cluster migration — `logos.dev` moved to **cluster 3** while liblogosdelivery's baked preset still mapped it to cluster 2, so fresh nodes never grafted a mesh ("existing connections persist, new joins fail"). Fix = `preset:"logos.test"` (still cluster 2) across mobile transport + core + hub, entry-node multiaddrs pinned. The always-on hub is the liveness oracle. Provenance: memory `logos-fleet-health-oracle`.
+[^24]: qaku "answers never show on other devices" (2026-09-29, qaku-logos `edc5810`, mobile 0.1.71): `postAnswer` left the optional `author` undefined; `cjson` hashed it as `null`, the wire dropped it, the receiver's digest differed, and the gated `answer` type was dropped. Fix: `cjson` skips undefined, the builder sets `author`, `verifyEvent` retries with absent optional keys as `null` (`LEGACY_OPTIONAL`). Desktop C++ still verifies only the new form. Memory `qaku-answers-sig-undefined`.
+[^25]: Scala mobile `publishAndApply` awaited `sync.sendEvent` → every mutation blocked on an IPC hop to the shared node (fixed 0.9.81); verify memo + persisted cache (0.9.89, cold fold 4.2 s → fast; fold output unchanged, C++/TS parity intact). Memory `scala-local-first-write-path`.
+[^26]: loam-sync ADR 0020 (log snapshots), TS `src/snapshot.ts` + C++ `snapshot.hpp` with a byte-identical serializer proven by a golden test; hub writer → phone reader proven end-to-end 2026-09-25. Memory `rln-readiness-plan`.

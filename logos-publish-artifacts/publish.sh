@@ -21,7 +21,8 @@
 #   REPO_DISPLAY    ${REPO_DISPLAY:-vpavlin @ home}
 #   REPO_HOST       ${REPO_HOST:-<first hostname -I addr>}
 #   REPO_PORT       ${REPO_PORT:-8444}
-#   FDROID_HOME     ${FDROID_HOME:-$HOME/fdroid}                    # has repo/ metadata/ config.yml keystore
+#   FDROID_HOME     ${FDROID_HOME:-$HOME/fdroid}                    # has repo/ metadata/ config.yml keystore — SET IT EXPLICITLY
+#                   (a box often has several repos with different keys; the default may not be the one the phone reads)
 #   FDROID_BIN      ${FDROID_BIN:-$HOME/fdroid-venv/bin/fdroid}
 #   ANDROID_HOME, JAVA_HOME                                         # for fdroid/aapt2 (defaults probed)
 #
@@ -190,7 +191,12 @@ YML
         exit 1
       fi
     fi
-    echo "  fdroid index regenerated (v1+v2+entry) -> $BASE/fdroid/repo" >&2
+    # The address clients use is the repo_url baked into the signed index (config.yml), not the URL
+    # typed on the phone. An https repo_url with a self-signed cert makes "add repo" fail on every new
+    # phone (SSL handshake error); F-Droid needs no TLS (signed index + fingerprint). Warn on https.
+    RURL=$(python3 -c "import json;print(json.load(open('$V1'))['repo']['address'])" 2>/dev/null || echo "?")
+    echo "  fdroid index regenerated (v1+v2+entry) -> $RURL" >&2
+    case "$RURL" in https://*) echo "  WARNING: repo_url is https — fine only with a publicly trusted cert; for a self-signed LAN host set repo_url to http:// in $FDROID_HOME/config.yml and re-run (see logos-fdroid)" >&2;; esac
   fi
 fi
 

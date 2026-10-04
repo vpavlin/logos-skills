@@ -2,7 +2,7 @@
 
 ## The `.lgx` package format
 
-An `.lgx` is a **gzip'd tar**. Only these are allowed at the root: `manifest.json`, `manifest.cose`, `variants/`, `docs/`, `licenses/`. Your flat source files get relocated by the builder under `variants/<variant>/` (e.g. `variants/linux-amd64/`). The `manifest.json` carries `name`, `version`, `type`, `view`/`main`, `icon`, `dependencies`, and a `hashes` map (`{<leaf-dir>…, variants, root}`).[^14]
+An `.lgx` is a **gzip'd tar**. Only these are allowed at the root: `manifest.json`, `manifest.cose`, `variants/`, `docs/`, `licenses/`. Packages from module-builder 0.3.x also carry `manifest.sig` and an `assets/` dir (the icon and the module's LIDL contract under `assets/lidl/`) — keep `assets/` in any repack, or the contract is gone. Your flat source files get relocated by the builder under `variants/<variant>/` (e.g. `variants/linux-amd64/`). The `manifest.json` carries `name`, `version`, `type`, `view`/`main`, `icon`, `dependencies`, and a `hashes` map (`{<leaf-dir>…, variants, root}`).[^14]
 
 Variants:
 - **Repo/catalog distribution → PORTABLE `linux-amd64`** (`nix build .#lgx-portable`). Every official package (chat_ui etc.) ships portable. A `-dev` `.lgx` in a repo shows **"NOT AVAILABLE"** in Basecamp's package manager — silent, no error. Signatures are NOT the gate (official packages are `[unsigned]` too).
@@ -38,6 +38,8 @@ A single `regen.sh` that builds both `.#lgx-portable`, installs into the served 
 
 ## Hot-swap one `.so` without a full rebuild (merkle repack)
 
+**Prefer the `lgx` tool** (`nix build github:logos-co/logos-package`): `lgx add --variant <v>` replaces a variant's files and recomputes every hash, and `lgx merge` combines per-platform packages (see `logos-multiplatform-modules`). `lgx add` replaces the *whole* variant, so pass all of its old files plus the new one. Hand-repack only where the tool isn't available.
+
 When you patched a single shared lib and don't want a full `nix build .#lgx-portable`, hand-repack — Basecamp/logoscore **verify the merkle root on install**, so this must be exact.[^14]
 
 1. `tar xf old.lgx` → `manifest.json` + `variants/<variant>/*`.
@@ -53,7 +55,8 @@ When you patched a single shared lib and don't want a full `nix build .#lgx-port
 6. Insert a newest-first `index.json` version entry with the new `version`, `url`, `size`, `sha256` (of the `.lgx` file), `rootHash` (= merkle root), and embedded `manifest`.
 7. Self-verify: extract the published `.lgx`, recompute the merkle, assert == manifest `hashes`.
 
-Note: patching only `manifest.json` fields (e.g. `main`) does NOT change the `variants/` tree hash, so it's accepted. A *merged multi-variant* `.lgx` DOES fail the hash check (can't recompute the aggregate) — keep one variant per file.[^14]
+Note: patching only `manifest.json` fields (e.g. `main`) does NOT change the `variants/` tree hash, so it's accepted. A *hand-merged* multi-variant `.lgx` fails the hash check — merge with `lgx merge`, which recomputes the aggregate.[^14]
 
 ---
-[^14]: memory `logos-lgx-hash-repack` (self-verified in-session to reproduce real 0.2.1 hashes). [^15]: `~/vpavlin-home/regen.sh`, `scripts/gen-lan-repo.sh`, `scripts/serve-lan.sh`, memories `logos-repo-publishing` + `kym-lan-repo-publishing`.
+[^14]: memory `logos-lgx-hash-repack` (self-verified in-session to reproduce real 0.2.1 hashes).
+[^15]: `~/vpavlin-home/regen.sh`, `scripts/gen-lan-repo.sh`, `scripts/serve-lan.sh`, memories `logos-repo-publishing` + `kym-lan-repo-publishing`.

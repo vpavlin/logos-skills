@@ -28,9 +28,9 @@ Use `ephemeral:true` only for data already persisted elsewhere (SDS repair rebro
 ## Receive sequence
 ```
 on onChannelMessageReceived({channelId, senderId, payload}):
-    if senderId == self: skip            // your own echo
+    // do NOT filter on senderId: on the event it is not the origin (see SKILL.md §5)
     for cand in payloadCandidates(payload):   // try single- AND double-base64
-        if opened = aeadOpen(cand, roomKey, aad=topic): apply(opened); break
+        if opened = aeadOpen(cand, roomKey, aad=topic): dedupById(opened); apply(opened); break   // author comes from the sealed payload
     // raw message_received copies (SDS-framed) will also arrive; open() rejects them harmlessly
 ```
 
@@ -42,7 +42,7 @@ on onChannelMessageReceived({channelId, senderId, payload}):
 | Sends never appear on wire; no error | no Encrypt provider | ensure `start()` ran / install no-op |
 | Receives 0, or garbage after decode | double-base64 mismatch between peers | make receive try both depths; align send |
 | Peer's plain `send()` invisible to channel (or vice-versa) | `meta` marker filter | one transport per topic |
-| "Verified receipt" but it was your own echo | `senderId == self` | filter self before counting |
+| "Verified receipt" but it was your own write | your own publish came back over raw relay | count by the author inside the sealed payload, not by the event's `senderId` |
 | Receives nothing on a hand-pinned shard | subscribed a non-existent shard | subscribe by content topic, let autosharding pick |
 
 ## What to build on top

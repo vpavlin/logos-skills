@@ -13,10 +13,15 @@ They are **generic playbooks** (any domain: shared calendars, activity trackers,
 | **logos-multiwriter-sync** | The data-model spine: event log + fold, HLC ordering, the three write-shapes (commutative delta / per-actor register / LWW), union merge, roles-on-merge, crypto + wire. |
 | **logos-reliable-channels** | The SDS Reliable Channels transport: the receive-chain gates and the silent-failure fixes. |
 | **logos-basecamp-module** | The desktop half: a universal `core` module + a thin QML `view`, `.lgx` build/publish, the builder-glue quirks, the always-on headless hub. Views call modules **asynchronously only** and render peer text as **plain text** (bundled `qml-plaintext.py`). |
+| **logos-basecamp-0.3-port** | Move an app from Basecamp 0.2.x to **0.3.x / builder 0.3.1**, delivery fork → upstream v0.3.0, storage 2.x → 3.0: why the stack moves together, the phone-first wire shim (SegmentMessage), the per-module checklist (LIDL, 256² icons, onContextReady defer, default args), RLN-off-by-config, a separate test repo. |
+| **logos-headless-logosctl** | Headless modules on the 0.3 runtime with **`logosctl`** (replaces logoscore/logos-hub): sessions, install/load/call/watch with typed args, logs, the host-owned Storage node, always-on hubs, two-node test rigs. |
 | **logos-multiplatform-modules** | Ship modules for **macOS Apple Silicon and Linux ARM64** without the hardware: build each platform on GitHub runners from pinned refs (bundled workflow), merge into one package per module with existing platforms proven byte-identical (bundled `lgx-merge-platforms.sh`), republish the same version. |
-| **logos-mobile-app** | The phone half: React Native + `liblogosdelivery` JNI, building the arm64 lib, the `expo prebuild` template trap, F-Droid release. |
+| **logos-mobile-app** | The phone half: React Native + `liblogosdelivery` JNI, building the arm64 lib, the `expo prebuild` template trap, Core vs Edge, Hermes traps, release-build OOM, and what delivery v0.39 changes on phones. |
 | **logos-distributed-debugging** | The methodology: triage the cheap causes first (versions, repo, a known-good hub as oracle), walk the layered chain, instrument-and-measure, same-event-two-listeners, verify-via-the-real-path, on-device timing instrumentation for phone-only bugs, and fixed-length stalls = a blocking call hitting the IPC timeout. Error-handling contract: `logos-basecamp-module`. |
 | **logos-publish-artifacts** | Ship built artifacts to self-hosted repos: `.lgx` → a Basecamp package repo, APK → an F-Droid repo. Encodes the silent traps (PORTABLE-not-`-dev`, required F-Droid metadata, `CurrentVersionCode` pinning, and the **index-v1-vs-index-v2/entry.json staleness** that strands releases). Bundled `publish.sh` does both halves + verifies the indexes regenerated together; `publish-public-basecamp.py` updates a public catalog's two surfaces additively, including same-version republishes. |
+| **logos-fdroid** | The self-hosted **F-Droid** repo in depth: two keys, metadata or an empty index, never pin `CurrentVersionCode`, **http `repo_url`** + fingerprint link/QR, `uses-feature required=false`, keeping old versions, public vs private repos, verifying the served index. |
+| **logos-storage** | **Logos Storage** for attachments, media and log snapshots: CIDs + the two-id rule, the 2.x → 3.0 API, the Basecamp-0.3 host-owned node, NAT and the reachable-hub cache, address traps, mobile fetch-only. |
+| **logos-rln-budget** | Designing under **RLN**: 100 messages / 10 min per node shared by all apps, what counts, who owns pacing vs snapshots vs payload size, membership vs RLN-off-by-config on delivery v0.3.0, open questions. |
 | **loam-keycard** | **Hardware & multiple identities.** A Status Keycard (NFC) as a per-person signer — on-card tap-per-sign, the choppu RN stack, the three sig adapters + the silent traps (`res.data.cbFuncResponse` nesting, reader-wedge, `buffer` bundle break); multiple authoring identities bound per container; one card = one identity across phone (NFC) + desktop (PC/SC) via `domainToSignPath`; `signaturesRequired`; custody/delegation; desktop signing. |
 | **loam-integrate-app** | Integrate a React-Native app as a **client of the device-wide Loam shared delivery node** (many apps → one Waku/Logos node): the `preferServiceBackend` ordering, service binding, the approval prompt, and the "shared enabled but runs its own node" gotchas. |
 | **loam-update-app** | Move a Loam mobile app onto a newer `loam-transport` SDK: bump the submodule, rebuild the release APK, publish — encoding the build traps (`expo prebuild --clean` wiping `local.properties`, the shim entry-file import, submodule realign). |
@@ -32,6 +37,8 @@ cp -r logos-skills/logos-* logos-skills/loam-* ~/.claude/skills/   # or: ln -s p
 ```
 
 They then load automatically in every project. Read `logos-multiwriter-app-blueprint/HANDBOOK.md` before cutting the first line.
+
+**Presenting this?** [`PRESENTING.md`](PRESENTING.md) is a twelve-point "how we build apps on Logos" outline, each point linked to the skills that hold the detail.
 
 ## Provenance & validation
 
