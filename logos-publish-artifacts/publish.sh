@@ -40,6 +40,8 @@ set -euo pipefail
 BASECAMP_REPO="${BASECAMP_REPO:-$HOME/vpavlin-home/basecamp}"
 REPO_NAME="${REPO_NAME:-vpavlin-home}"
 REPO_DISPLAY="${REPO_DISPLAY:-vpavlin @ home}"
+# URL path the BASECAMP_REPO dir is served under (a second repo, e.g. basecamp-0.3, sits beside it).
+BASECAMP_PATH="${BASECAMP_PATH:-basecamp}"
 # Host for the .lgx URLs. Default: the host the repo's EXISTING catalog already advertises (its TLS
 # cert covers that name), else the first IP. Never "first IP" blindly: a box with several addresses
 # can reorder them after a reboot, and a URL host the cert doesn't cover = "download failed" in Basecamp.
@@ -104,13 +106,13 @@ if [ "${#LGXS[@]}" -gt 0 ]; then
   "displayName": "${REPO_DISPLAY}",
   "description": "Logos Basecamp modules served on the local network.",
   "homepage": "https://github.com/${USER}",
-  "indexUrl": "${BASE}/basecamp/index.json",
+  "indexUrl": "${BASE}/${BASECAMP_PATH}/index.json",
   "trustedSigners": []
 }
 JSON
   fi
   # regenerate index.json by scanning EVERY .lgx (all apps stay listed)
-  ( cd "$BASECAMP_REPO" && python3 - "${BASE}/basecamp" "$REPO_NAME" <<'PY' > index.json
+  ( cd "$BASECAMP_REPO" && python3 - "${BASE}/${BASECAMP_PATH}" "$REPO_NAME" <<'PY' > index.json
 import glob, hashlib, json, subprocess, sys, datetime
 base, repo = sys.argv[1], sys.argv[2]; packages = []
 now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
@@ -125,7 +127,7 @@ for lgx in sorted(glob.glob("*.lgx")):
 json.dump({"schemaVersion":2,"repositoryName":repo,"generatedAt":now,"packages":packages}, sys.stdout, indent=2); print()
 PY
   )
-  echo "  basecamp index -> $BASE/basecamp/logos-repo.json  ($(ls "$BASECAMP_REPO"/*.lgx | wc -l) package(s))" >&2
+  echo "  basecamp index -> $BASE/$BASECAMP_PATH/logos-repo.json  ($(ls "$BASECAMP_REPO"/*.lgx | wc -l) package(s))" >&2
 fi
 
 # ---------- F-Droid: ensure metadata, copy APK, regenerate signed index ----------
