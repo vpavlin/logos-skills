@@ -35,6 +35,16 @@ View (`module/`):
 8. `git add` every new file (`icon.png`, new sources) — nix flakes only see git-tracked files (see trap below).[^12]
 9. Build: `nix build .#lgx-portable` for each. Publish both to the repo (below).
 
+**Always build the PORTABLE variant. Make this a reflex, not a decision.** `.#lgx` is a
+*dev* build: its variant is `linux-x86_64-dev`, and Basecamp is a portable build that
+only takes `linux-amd64`. A dev package does not error — Basecamp passes it over in
+silence, and the package manager shows it as "NOT AVAILABLE". The one place a dev build
+is wanted is a **local** `lgpm install --file` (a different code path — do not decide
+what to publish from what lgpm accepts). So: `.#lgx-portable` for anything you install
+or publish, and if a package you built does not show up in Basecamp at all, **check the
+variant inside the package first** (`tar tzf x.lgx | grep variants/`) before debugging
+anything else — it costs one command and rules out the most common cause.
+
 **Pin SDK inputs by their FULL 40-char commit, never a branch or short rev.** A `github:logos-co/<repo>/<branch>` or short-rev url resolves through GitHub's API, which **422s the moment that branch is renamed or deleted** — and the SDK's feature branches are volatile — so a from-scratch `nix flake` eval breaks with no code change. In every `flake.nix` input, pin `github:logos-co/<repo>/<full-40-char-sha>`, and keep the three inputs (`logos-module-builder`, `delivery_module`, your core) on **one** builder rev via `follows`. Derive the current-good SHAs from a **known-good `flake.lock`** (`nix flake metadata`), not from memory. A working triple observed in practice: `logos-module-builder afe4430ee6eb7ba45c08a516a43e18500720c715`, `delivery_module 0fb3a7427b29c98ab0fa2465bcd1e90cbfdf50a3` — treat these as a starting point to verify, not gospel; the 0.2.0-era desktop builder is a different rev (`021013458d87…`), so match the rev to your target Basecamp.[^13] For **Basecamp 0.3.x** the builder is the release tag `0.3.1` (release tags are stable; it's branches that vanish), and every module in the chain must use it — see the 0.3.x section.
 
 ## The read-state rule (the #1 gotcha)
