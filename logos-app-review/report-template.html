@@ -1,0 +1,142 @@
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{APP}} review</title>
+<style>
+  :root {
+    --bg: #f7f6f3; --surface: #ffffff; --ink: #1d1d1b; --muted: #5f5d58; --line: #e3e0d9;
+    --blocker: #b42318; --blocker-bg: #fdecea; --major: #b54708; --major-bg: #fef3e7;
+    --minor: #475467; --minor-bg: #eef0f3; --good: #067647; --good-bg: #e7f6ee; --accent: #e8622a;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #151514; --surface: #1e1e1c; --ink: #ecebe8; --muted: #a3a09a; --line: #34332f;
+      --blocker: #f97066; --blocker-bg: #3a1714; --major: #fdb022; --major-bg: #362611;
+      --minor: #b0b8c4; --minor-bg: #262a30; --good: #47cd89; --good-bg: #12301f; --accent: #f38744;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #151514; --surface: #1e1e1c; --ink: #ecebe8; --muted: #a3a09a; --line: #34332f;
+    --blocker: #f97066; --blocker-bg: #3a1714; --major: #fdb022; --major-bg: #362611;
+    --minor: #b0b8c4; --minor-bg: #262a30; --good: #47cd89; --good-bg: #12301f; --accent: #f38744;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--ink); font: 15px/1.55 system-ui, -apple-system, "Segoe UI", sans-serif; margin: 0; }
+  main { max-width: 980px; margin: 0 auto; padding: 40px 20px 80px; }
+  h1 { font-size: 30px; line-height: 1.2; margin: 0 0 6px; letter-spacing: -0.01em; }
+  h2 { font-size: 21px; margin: 48px 0 6px; padding-top: 8px; border-top: 1px solid var(--line); }
+  h3 { font-size: 16.5px; margin: 0 0 6px; }
+  p { margin: 0 0 12px; }
+  .sub { color: var(--muted); margin-bottom: 24px; }
+  code { font: 13px ui-monospace, SFMono-Regular, Menlo, monospace; background: var(--minor-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+  .verdict { background: var(--surface); border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; padding: 18px 20px; margin: 20px 0; }
+  .verdict p:last-child { margin: 0; }
+  .grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin: 16px 0; }
+  .stat { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  .stat b { display: block; font-size: 24px; line-height: 1.2; }
+  .stat span { color: var(--muted); font-size: 13px; }
+  .finding { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; margin: 16px 0; }
+  .tag { display: inline-block; font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; padding: 2px 8px; border-radius: 99px; margin-right: 8px; vertical-align: 2px; }
+  .blocker, .high { color: var(--blocker); background: var(--blocker-bg); }
+  .major, .medium { color: var(--major); background: var(--major-bg); }
+  .minor, .low { color: var(--minor); background: var(--minor-bg); }
+  .good { color: var(--good); background: var(--good-bg); }
+  .fix { color: var(--muted); font-size: 14px; margin-top: 8px; }
+  .fix b { color: var(--ink); }
+  figure { margin: 14px 0 4px; }
+  figure img, figure video { width: 100%; border-radius: 6px; border: 1px solid var(--line); display: block; background: #111; }
+  figcaption { color: var(--muted); font-size: 13px; margin-top: 6px; }
+  .pair { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 720px) { .pair { grid-template-columns: 1fr; } }
+  ul { margin: 0 0 12px; padding-left: 20px; } li { margin: 4px 0; }
+  .tablewrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .03em; }
+  tr:last-child td { border-bottom: 0; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .note { background: var(--minor-bg); border-radius: 8px; padding: 12px 16px; font-size: 14px; }
+  nav.toc { font-size: 14px; color: var(--muted); }
+  nav.toc a { color: inherit; }
+</style>
+<main>
+  <h1>{{APP}} review</h1>
+  <p class="sub">{{what was done: code review, tests, probes, GUI test}} · repo <code>{{owner/repo}}</code> commit <code>{{sha}}</code>, package <code>{{name version}}</code> · {{date}}</p>
+
+  <div class="verdict">
+    <p><b>{{One-sentence verdict.}}</b> {{What works, in two or three clauses.}}</p>
+    <p>{{What does not, as a short list of the top findings, each marked reproduced.}}</p>
+    <ul>
+      <li>{{headline finding 1}}</li>
+      <li>{{headline finding 2}}</li>
+    </ul>
+  </div>
+
+  <div class="grid3">
+    <div class="stat"><b>{{n}}</b><span>high-severity findings ({{how many reproduced}})</span></div>
+    <div class="stat"><b>{{n}}</b><span>medium findings ({{reproduced / read in code}})</span></div>
+    <div class="stat"><b>{{x / y}}</b><span>tests pass; {{what the tests do not cover}}</span></div>
+  </div>
+
+  <nav class="toc">Jump to: <a href="#how">How I reviewed</a> · <a href="#claims">README vs. reality</a> · <a href="#high">High</a> · <a href="#medium">Medium</a> · <a href="#low">Low</a> · <a href="#works">What works</a> · <a href="#untested">Not tested</a></nav>
+
+  <h2 id="how">How I reviewed</h2>
+  <ul>
+    <li><b>Code.</b> {{commit, files read, review agents used and how candidates were verified}}</li>
+    <li><b>Tests and probes.</b> {{suite result, probe programs in probes/}}</li>
+    <li><b>Install.</b> {{how the package was installed; hash vs catalog; what happened}}</li>
+    <li><b>GUI.</b> {{isolated profiles, instances, networks used}}</li>
+    <li><b>Test traffic on shared networks</b> (with the user's OK): {{exactly what was sent, labelled}}</li>
+  </ul>
+
+  <h2 id="claims">What the README promises, and what I saw</h2>
+  <div class="tablewrap"><table>
+    <tr><th>README says</th><th>Observed</th></tr>
+    <tr><td>{{promise}}</td><td><span class="tag blocker">No</span> {{what happened}} (<a href="#f1">F1</a>)</td></tr>
+    <tr><td>{{promise}}</td><td><span class="tag good">Holds</span> {{evidence}}</td></tr>
+  </table></div>
+
+  <h2 id="high">High</h2>
+  <div class="finding" id="f1">
+    <h3><span class="tag high">High</span>{{Title: the defect, in one line}}</h3>
+    <p>{{Where (file:line) and what is wrong. Who can trigger it.}}</p>
+    <p>{{How it was reproduced: the probe name, the input, the output.}}</p>
+    <figure><img loading="lazy" src="media/{{shot}}.png" alt="{{alt}}"><figcaption>{{what the screenshot shows}}</figcaption></figure>
+    <p class="fix"><b>Suggested fix:</b> {{fix}}</p>
+    <p class="fix"><b>Reproduce:</b> <code>probes/{{probe}}</code></p>
+  </div>
+
+  <h2 id="medium">Medium</h2>
+  <div class="finding" id="f2">
+    <h3><span class="tag medium">Medium</span>{{Title}}</h3>
+    <p>{{Description. Mark clearly if it is "read in code" and not reproduced.}}</p>
+    <p class="fix"><b>Suggested fix:</b> {{fix}}</p>
+  </div>
+
+  <h2 id="low">Low</h2>
+  <div class="tablewrap"><table>
+    <tr><th>What</th><th>Where / how I know</th><th>Suggestion</th></tr>
+    <tr><td>{{issue}}</td><td>{{file:line, or screenshot; reproduced / read in code}}</td><td>{{suggestion}}</td></tr>
+  </table></div>
+
+  <h2 id="works">What works</h2>
+  <ul>
+    <li><b>{{area}}.</b> {{evidence, with a link to a screenshot or recording}}</li>
+  </ul>
+
+  <!-- Second round only: findings table with a status column -->
+  <!--
+  <h2 id="status">The first review's findings, one by one</h2>
+  <div class="tablewrap"><table>
+    <tr><th>First review</th><th>New version</th><th>How I checked</th></tr>
+    <tr><td>{{finding}}</td><td><span class="tag good">Fixed</span></td><td>{{probe re-run / GUI repro / read in code}}</td></tr>
+    <tr><td>{{finding}}</td><td><span class="tag major">Partly</span></td><td>{{what still works}}</td></tr>
+    <tr><td>{{finding}}</td><td><span class="tag blocker">Open</span></td><td>{{evidence}}</td></tr>
+  </table></div>
+  -->
+
+  <h2 id="untested">Not tested</h2>
+  <ul>
+    <li>{{platform / hardware / attack / network not covered, and why}}</li>
+  </ul>
+  <p class="note">{{Environment and test-traffic note: where everything ran, what was sent to shared networks, how to re-run the probes.}}</p>
+</main>
