@@ -36,9 +36,9 @@
   .stat span { color: var(--muted); font-size: 13px; }
   .finding { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; margin: 16px 0; }
   .tag { display: inline-block; font-size: 11.5px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase; padding: 2px 8px; border-radius: 99px; margin-right: 8px; vertical-align: 2px; }
-  .blocker { color: var(--blocker); background: var(--blocker-bg); }
-  .major { color: var(--major); background: var(--major-bg); }
-  .minor { color: var(--minor); background: var(--minor-bg); }
+  .blocker, .high { color: var(--blocker); background: var(--blocker-bg); }
+  .major, .medium { color: var(--major); background: var(--major-bg); }
+  .minor, .low { color: var(--minor); background: var(--minor-bg); }
   .good { color: var(--good); background: var(--good-bg); }
   .fix { color: var(--muted); font-size: 14px; margin-top: 8px; }
   .fix b { color: var(--ink); }
@@ -97,7 +97,7 @@
 
   <h2 id="high">High</h2>
   <div class="finding" id="f1">
-    <h3><span class="tag blocker">High</span>{{Title: the defect, in one line}}</h3>
+    <h3><span class="tag high">High</span>{{Title: the defect, in one line}}</h3>
     <p>{{Where (file:line) and what is wrong. Who can trigger it.}}</p>
     <p>{{How it was reproduced: the probe name, the input, the output.}}</p>
     <figure><img loading="lazy" src="media/{{shot}}.png" alt="{{alt}}"><figcaption>{{what the screenshot shows}}</figcaption></figure>
@@ -107,7 +107,7 @@
 
   <h2 id="medium">Medium</h2>
   <div class="finding" id="f2">
-    <h3><span class="tag major">Medium</span>{{Title}}</h3>
+    <h3><span class="tag medium">Medium</span>{{Title}}</h3>
     <p>{{Description. Mark clearly if it is "read in code" and not reproduced.}}</p>
     <p class="fix"><b>Suggested fix:</b> {{fix}}</p>
   </div>
