@@ -94,4 +94,5 @@ When the author ships fixes: fetch the new source and packages, diff against the
 ## 7. Publish
 - Default: the private/LAN drop (WebDAV: `curl -X MKCOL` / `PUT`), then verify byte for byte by downloading and comparing.
 - Public (a read-only static host, files copied over ssh) only with the user's explicit OK. Reviews of unreleased projects describe unfixed vulnerabilities: ask first and suggest telling the author before it goes up.
+- Keep every review in one dedicated folder on the host (for example `reviews/<app>/`, one folder per report, `-fresh` or a date suffix for re-runs) so reviews do not mix with other published things; when you move a report, leave a redirect from the old URL.
 - Finish with a short message: top findings, what was not tested, URLs, open decisions.
