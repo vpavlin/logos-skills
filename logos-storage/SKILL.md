@@ -91,6 +91,26 @@ enough. One libp2p bug blocked step 2: Kademlia `getProviders` ignored provider 
 node itself, so the hub — the only DHT server, holding everyone's records — couldn't find content it
 had been told about. That needed a patch on the hub's build (still not upstream as of 2026-10-02).
 
+**Still open on Basecamp 0.3 (stock Storage 3.0, 2026-10-09).** A Swamp hub on a VPS with a
+public `extip`, `autonat-server` and `relay-server` in its config (libstorage 0.4.5 logs "AutoNAT
+server enabled"). Results:
+- **Works:** the catalogue; the hub's Storage port is reachable from outside; the AutoNAT server
+  answers dial requests.
+- **Doesn't work reliably:** caching a NAT-ed publisher's file on the hub. In the offline-publisher
+  tests the hub never fetched it, with either a runtime `storage_module.connect(hubPeerId, …)` from
+  the publisher (the connection came up) or the hub in the publisher's `bootstrap-node` list. A later
+  explicit `fetch` on the hub, with the publisher online, did end with `exists` = true.
+- **What the hub's debug log shows:**
+  - the NAT-ed publisher announces only loopback and its private LAN address (`/ip4/127.0.0.1/…`,
+    `/ip4/192.168.x.x/…`), so the hub can't dial it back (see "No `extip` = no announced address"
+    below);
+  - `debug` reports `relayRunning: false` despite `relay-server: true`, so the publisher gets no
+    relay circuit address either.
+- **Not yet ruled out:** the `getProviders` local-records bug above. The Scala hub where hub caching
+  was proven runs a patched Storage; the Swamp hub runs stock Storage.
+
+Until it's solved, files are only fetchable while their publisher, or another holder, is online.[^hub09]
+
 ## Address traps
 
 - **No `extip` = no announced address.** A node announces exactly its `nat=extip:<addr>`; without it
@@ -130,3 +150,4 @@ the snapshot.[^snap]
 [^addr]: Memories `codex-fetch-needs-dht-discovery` (announced addrs = extip only; listen-ip bug; overlay IPv4 vs IPv6) and `libstorage-ipv6-dial-bind-bug` (EINVAL dial bind; patch `0001-tcp-dial-bind-same-family.patch`; upstream fix nim-libp2p #2952 in v2.4.0 per `analysis-storage.md` § 3). ULA drop: `analysis-storage.md` § 2c (#1542, UNVERIFIED there).
 [^mobile]: Memories `logos-storage-module` (no Android target, no REST; fetch-only feasible), `storage-android-fetch-client` (arm64 cross-compile proven; per-dependency cross recipe).
 [^snap]: Memory `rln-readiness-plan` (loam-sync ADR 0020 snapshots, TS + C++ byte-identical serializer, hub writer → phone reader proven end-to-end 2026-09-25; the corrupted-link failure).
+[^hub09]: Swamp hub (`hub/vps-hub.sh`, logosctl 0.3.1 AppImage, Storage TCP 8399) on the VPS, 2026-10-09: offline-publisher tests from atlas with a runtime `connect` and with `bootstrap-node` = the hub's SPR; both left the hub at `fetched 0` / `stalled 18` and the fresh node's download at "transfer stalled (no holder answering)". The catalogue part passed: a fresh node got the model 15 s after start with the publisher offline. Later the same day a manual `storage_module fetch` on the hub (publisher online, DEBUG log) ended with `exists` = true; the log showed the publisher's loopback/LAN-only addresses timing out and `relayRunning: false`.

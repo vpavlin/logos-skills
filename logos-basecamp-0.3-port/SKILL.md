@@ -31,6 +31,14 @@ module, and the traps found on the way. Module-level rules live in `logos-baseca
    delivery their ported apps need. Prefer renaming the fork or pinning dependency ranges (e.g. `^0.3`), and
    remove the bumped fork from shared repos once the apps have moved.
 
+**How the trap shows up** (2026-10-09, Duet and laptop). The app on Basecamp 0.3 sends but never
+receives (Swamp's counters: rx 0 / tx 140), while headless nodes on the same network sync fine. The
+log is full of `SDS pending-content stash full, dropping oldest entry` on the app's topics: the
+fork can't decode the 0.3.0 nodes' channel messages. Check
+`<profile>/modules/delivery_module/manifest.json` for the version and
+`<profile>/module_data/package_downloader/*/repositories.json` for which repo offered it. The fork
+has since been removed from apps.vpavlin.xyz.[^fork09]
+
 ## Phase 0 — safe on the current stack
 
 - **Wire shim in the transport, both platforms.** Accept a frame as a `SegmentMessage` only if it
@@ -89,6 +97,21 @@ Per module (the checklist that caught every real failure):[^builder]
 - **The host owns Storage**: Basecamp 0.3 and `logosctl` initialise it from
   `~/.logos_storage/config.json`; your `init()` is refused. Adopt the host's node (`logos-storage`).
 
+**An app that drove delivery_module itself** (its own `createNode`, `channelCreate`,
+`onMessageReceived`) is easiest to port by moving it onto loam_core instead of re-fitting it to
+0.3.0's config and event changes. That was WhisperBox 0.3.8 → 0.4.0:[^wb]
+- `loam_core`: `setSenderId(deviceId)`, `start(cfg)` (`{"mode":"Core","preset":"logos.test","useChannels":true}`),
+  `join(topic)` once `statusChanged` says `Connected` (also poll `status()`: the event can be
+  lost), `sendSealed(topic, base64(bytes))`, `received(topic, senderId, base64(bytes), ts)`.
+- Keep the wire: put the same bytes on the topic as before (and as the phones' loam-transport),
+  so old phones keep interoperating. Hand `received`'s payload to the old ingest **still
+  base64'd** if that ingest peels one or two layers itself; decoding it first broke the
+  raw-envelope interop test.
+- Don't start the transport in `onContextReady()`; let the first timer tick do it. Don't call
+  modules inside a received/status callback: queue the work onto the module's thread.
+- Replace the test fake of delivery_module with a fake loam_core (shared node, SDS self-filter
+  by senderId, base64 payloads).
+
 ## Phase 2 — test without the GUI first
 
 - **`logosctl` two-node sessions** (`logos-headless-logosctl`): install the rebuilt packages in
@@ -124,3 +147,5 @@ merged.
 [^p03mem]: Memory `port-0-3` ("v0.3.0 (and the old fork!) emit event payloads as {"_bytes": URL-SAFE base64} → old decoder truncated at '-'/'_'"; loam_core 0.5.2 + compat 0.4.19).
 [^builder]: `docs/port-0.3/analysis-basecamp-builder.md` § Key findings + § Checklist (builder 0.3.1 `16e2f6b`; LIDL requirement `lib/common.nix:167-213`; icons `package.cpp:54-121`; version ranges `module_manager.cpp:851-868`; default args `impl_header_parser.cpp:893-905`; QML `logos` timeouts). QtBluetooth: memory `ble-mesh-qtbluetooth-bundle`.
 [^stor]: `docs/port-0.3/analysis-storage.md` § 2a (API table, 30 s manifest wait, busy `destroy`) and memory `port-0-3` finding 2 (host-owned Storage, `AsyncResult` with a 60 s timeout).
+[^fork09]: Swamp 0.5.6 on a Lenovo Duet and vpavlin's laptop, 2026-10-09: delivery_module 0.9.0 installed from `apps.vpavlin.xyz/logos-repo.json` + the 0.2-era LAN repo; 1375 "stash full" lines and `channel_message_received` 0 in the newest log; after installing delivery 0.3.2 the Duet received a hub-only model. Fork versions 0.9.0/0.2.3/0.1.4 dropped from the public catalogue the same day (the maintainer's agent).
+[^wb]: `vpavlin/whisperbox-logos` branch `port/0.3` (`0b13b60` desktop, `4faf244` Android with loam-transport `2a472be`): all 8 test layers green (e2e 201/201, JS<->C++ interop with raw and base64 envelopes); live logosctl two-node on logos.test, form A->B in 64 s and the answer back decrypted in 3 s.

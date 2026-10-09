@@ -64,6 +64,15 @@ gh release view <tag> --repo logos-co/logos-basecamp --json assets -q '.assets[]
 5. **Say what's untested.** A platform built on CI but never run is "published, untested on a
    real <machine>". Name the likely failure points (OS permissions, hardware access).
 
+**Without an API token** (e.g. a machine that can only push through a deploy key), trigger the build
+by pushing a tag (`on: push: tags: ["arm64-*"]`) and let the job attach the packages to a GitHub
+release (`permissions: contents: write`, `softprops/action-gh-release`). Public release assets
+download without auth, and so does the run status from `api.github.com`. A tag pushed **in the same
+push as the new workflow file doesn't trigger it**: push another tag. Add a job step that fails on
+inline LSE atomics, using `objdump -d` while ignoring the `__aarch64_*` outline helpers. LSE atomics
+are ARMv8.1; an ARMv8.0 machine (e.g. a Lenovo Duet) dies on them with an illegal instruction, so
+the check catches it before a user does.[^swamparm]
+
 ## Blockers that stop a flake building anywhere but home
 
 - **`path:/home/...` inputs.** A flake input pointing at a local checkout builds only on that
@@ -129,3 +138,4 @@ build-then-merge path takes in Windows once the stack is on a builder that cross
 [^fork]: delivery_module 0.1.4 on Linux bundles `liblogosdelivery v0.38.1-ge91aaa` (a locally patched build with Android fixes); the macOS/ARM variants bundle upstream `8ad99f1`. Functionally equivalent on desktop, recorded in `loam-basecamp/docs/delivery-upstream-vs-fork.md`.
 [^lidl]: `loam-basecamp` `port/0.3` `docs/port-0.3/analysis-basecamp-builder.md` § Packages ("0.3.1 ships contracts in `assets/lidl/`; `lgx merge` refuses differing contract bytes → same builder on every platform").
 [^qtbt]: Memory `ble-mesh-qtbluetooth-bundle` (ble_mesh 0.1.0 failed on stock Basecamp 0.3.1; 0.1.1 bundled `libQt6Bluetooth.so.6` from qtconnectivity 6.9.2 with RUNPATH `$ORIGIN` via `lgx add`, load-tested against the extracted AppImage libs; ble_mesh 0.2.0 bundles it from the flake, memory `port-0-3`). The scan of 20 modules found it the only missing Qt lib.
+[^swamparm]: `vpavlin/swamp3d` `.github/workflows/arm64.yml` (releases `arm64-0.5.5-1`, `arm64-0.5.6`); merged with `lgx-merge-platforms.sh` (amd64 byte-identical); swamp_core loaded on the Duet (ARMv8.0) against Basecamp 0.3.1's bundled libs.
