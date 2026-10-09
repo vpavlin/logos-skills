@@ -133,6 +133,20 @@ For hub-specific silent failures (receives nothing / meshes with nobody) see the
 
 ---
 
+## Catch-up under a serving budget (late joiners)
+
+If peers cap how much they serve (and under RLN they must), a node that's far behind gets only part
+of what it lacks per round. With a fixed 2-minute cadence, a fresh node missed a whole category for
+minutes.[^budget]
+- **Adapt the cadence:** ask again every ~15 s while rounds still bring events in, and every
+  ~30 s for the first minutes after start, even when a round brings nothing. Fall back to the
+  slow cadence once caught up.
+- **Don't put targeted re-sends behind the budget:** "you seem to lack X, here it is" is small
+  and is exactly the message a busy node would otherwise drop.
+- **Accusations need a way back:** if you audit peers (e.g. "your index leaves out my model"), key
+  the finding per (peer, item) and withdraw it when a newer state includes the item. A peer that
+  was merely late is otherwise blamed forever.
+
 ## Parity: one reference, mirrored implementations
 When the same fold runs in two languages (e.g. a JS reference + a C++ core), define it **once** as the reference and guard the port with **golden-vector fixtures + a cross-language parity test** — validate logic, not just the codec.[^17] The reference here keeps its C++ mirror byte-identical (24/24 parity), down to the reconciliation fingerprint.[^17][^12]
 
@@ -189,3 +203,4 @@ All paths are repo-relative to `github.com/vpavlin/kym` (origin project, used he
 [^24]: qaku "answers never show on other devices" (2026-09-29, qaku-logos `edc5810`, mobile 0.1.71): `postAnswer` left the optional `author` undefined; `cjson` hashed it as `null`, the wire dropped it, the receiver's digest differed, and the gated `answer` type was dropped. Fix: `cjson` skips undefined, the builder sets `author`, `verifyEvent` retries with absent optional keys as `null` (`LEGACY_OPTIONAL`). Desktop C++ still verifies only the new form. Memory `qaku-answers-sig-undefined`.
 [^25]: Scala mobile `publishAndApply` awaited `sync.sendEvent` → every mutation blocked on an IPC hop to the shared node (fixed 0.9.81); verify memo + persisted cache (0.9.89, cold fold 4.2 s → fast; fold output unchanged, C++/TS parity intact). Memory `scala-local-first-write-path`.
 [^26]: loam-sync ADR 0020 (log snapshots), TS `src/snapshot.ts` + C++ `snapshot.hpp` with a byte-identical serializer proven by a golden test; hub writer → phone reader proven end-to-end 2026-09-25. Memory `rln-readiness-plan`.
+[^budget]: Swamp 0.5.6 (`swamp_core_impl.cpp`: `kCatchupBehindMs` 15 s, `kCatchupFreshMs` 30 s for 5 min, `serveEvents(..., budgeted=false)` for audit re-sends, `m_omissions` keyed `<indexer>|<model>` and erased when included). Found after a review showed the "flaky" e2e checks were deterministic; 102/102 three runs in a row after the fix.

@@ -108,6 +108,13 @@ The hub gotchas in `logos-basecamp-module` (self-drive, `entryNodes`, matching d
 apply unchanged. Upgrade a hub **with** its clients — a hub one delivery version behind meshes and
 still fails to converge.
 
+**On a server**, run the `logosctl-x86_64.AppImage` with `APPIMAGE_EXTRACT_AND_RUN=1`, so it needs no
+FUSE. Put the session variables in one env file, used both by the unit (`EnvironmentFile=`) and by
+your own `env $(cat …/env) logosctl …` calls. Load the core and set it up from a small
+`ExecStartPost` script that waits for `logosctl status`; quoting JSON inside the unit line breaks
+easily. Check the box for port clashes first (`ss -tlnp`): Storage's `listen-port` has to be free
+and open inbound. `swamp/hub/vps-hub.sh` does all of this.[^hubsh]
+
 ## Two nodes on one machine (a sync test rig)
 
 Two sessions, two HOMEs, same packages. Ports: delivery binds random ports when `tcpPort` /
@@ -135,3 +142,4 @@ indexer that has no UI at all.
 [^stor]: Memory `port-0-3` finding 2 + `TESTING.md` § Known limitations: the host initialises Storage from `$HOME/.logos_storage/config.json` (`loadConfigOrDefault`) on public `logos.test`; an app's `init()` is refused; scala adopts the host node (`m_storageHostOwned`). Hub test: a `logosctl` session on a VPS with `extip` + `autonat-server` + `relay-server` in that file.
 [^ctx]: Analysis § Key findings ("capability_module: rejecting requestModule — auth token not recognized", 12× incl. retries, old-built scala under logosctl 0.3.1) + memory `port-0-3` finding 1 (official modules hit it too; all cores now defer ~1 s).
 [^rig]: Memory `port-0-3` ("Two-node logosctl tests passed for scala, qaku, kith, kym, perun"); random ports: memory `loam-node-ports`. Private-network recipe: `analysis-delivery.md` § 6 (upstream `tests/e2e/libs/helpers.py`), marked UNVERIFIED on v0.3.0 there.
+[^hubsh]: `vpavlin/swamp3d` `hub/vps-hub.sh` (idempotent, `/var/lib/swamp-hub`, `swamp-hub.service`), run on the VPS 2026-10-09 by jimmy-crib/vpavlin; 8299 was already taken by a scala hub's Storage, so Swamp uses 8399.

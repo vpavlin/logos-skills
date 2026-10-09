@@ -109,6 +109,13 @@ Component.onCompleted: { logos.onModuleEvent && logos.onModuleEvent("<app>_core"
 ```
 On a **mutation**, have the core return the fresh state JSON, so the view renders straight from the instance that applied the edit (don't wait for the next poll).[^8]
 
+**Inputs vs the polled state.** A `TextField { text: root.st.me.name }` is re-evaluated on every
+poll, so it wipes what the user is typing ("it clears before I can hit save"). Give the field a
+`saved` property (bound to the state) and an `edited` flag set by `onTextEdited`. Copy `saved` into
+`text` only while the field isn't focused or edited. Clear `edited` after a successful save, or
+when focus leaves an unchanged field, and let Escape restore the saved value. Test it by typing
+into the field in an offscreen harness and then forcing refreshes.[^fields]
+
 ## Style the view with the Logos design system (do NOT hand-roll QtQuick)
 
 A `ui_qml` view must use the official **`logos-design-system`**, not bespoke `QtQuick.Controls`. The Basecamp host **bundles** it (it's a transitive dep in the module `flake.lock`), so it resolves at runtime with **no extra flake input** — just import it:[^ds]
@@ -313,3 +320,4 @@ All paths under `github.com/vpavlin/kym` (checked out at `/home/vpavlin/kym`) un
 [^hubver]: Scala VPS hub, 2026-09-30: on delivery_module 0.1.3 it could not reassemble the segmented catch-up from 0.1.4 clients, so a newly added calendar stayed empty; upgrading the hub to 0.1.4 fixed it. Memory: `scala-vps-hub`.
 [^storhub]: Scala 0.9.36–0.9.38: hub Storage root with `autonat-server` + `relay-server`, cache-on-see with retries (`cacheAttachments`/`retryCacheFetches`), and the nim-libp2p patch `0002-kad-getproviders-include-local-records.patch` (vpavlin/scala `mobile/native/logosstorage/patches/nim-libp2p/`). Proven desktop→hub→desktop byte-identical across NATs. Memory: `storage-nat-hub-cache`.
 [^p03]: Basecamp 0.3 port analysis, 2026-10-02 (`loam-basecamp` branch `port/0.3`, `docs/port-0.3/analysis-basecamp-builder.md` + `analysis-delivery.md` + `TESTING.md`), source-read against builder 0.3.1 (`16e2f6b`), logos-protocol 0.9.0, cpp-sdk `3f34c0b`, delivery_module v0.3.0 (`bec8594`, lib `ca28145`), and exercised with `logosctl` 0.3.1 two-node tests of every app. 256² icon: logos-package `package.cpp` (manifest ≥ 0.4.0). onContextReady rejection: seen on scala and official modules; all ported cores defer startup calls by ~1 s (`scala_impl.cpp` `startModules`). Default-arg drop: `impl_header_parser.cpp:893-905` (scala `createCalendar`/`handleShareLink` lost `identityId`). `AsyncResult` timeouts: `scala_impl.cpp` `downloadToUrlAsyncResult(…, 60000)`. Cross-repo upgrade incident 2026-10-02 (Basecamp replaced the 0.1.4 fork with upstream 0.3.x; nothing synced). Memories: `port-0-3`, `delivery-upstream-vs-fork`, `scala-gui-delivery-flat-config`, `loam-node-ports`.
+[^fields]: Swamp 0.5.3 `module/Main.qml` `component Field` (`saved`/`edited`), reported by vpavlin in the first GUI test; `scripts/qml-harness/harness.cpp` types "Bog Witch" into the profile field and refreshes 3x - the old view fails (the field holds the saved name again), the new one passes.
