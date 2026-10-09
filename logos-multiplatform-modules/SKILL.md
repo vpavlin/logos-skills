@@ -69,8 +69,9 @@ by pushing a tag (`on: push: tags: ["arm64-*"]`) and let the job attach the pack
 release (`permissions: contents: write`, `softprops/action-gh-release`). Public release assets
 download without auth, and so does the run status from `api.github.com`. A tag pushed **in the same
 push as the new workflow file doesn't trigger it**: push another tag. Add a job step that fails on
-inline LSE atomics, using `objdump -d` while ignoring the `__aarch64_*` outline helpers. That catches
-the ARMv8.0 trap below before a user does.[^swamparm]
+inline LSE atomics, using `objdump -d` while ignoring the `__aarch64_*` outline helpers. LSE atomics
+are ARMv8.1; an ARMv8.0 machine (e.g. a Lenovo Duet) dies on them with an illegal instruction, so
+the check catches it before a user does.[^swamparm]
 
 ## Blockers that stop a flake building anywhere but home
 
