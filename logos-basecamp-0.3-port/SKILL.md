@@ -130,6 +130,15 @@ Phone library v0.39 (a JNI rewrite for the new C ABI, plus our Android patches r
 `logos-mobile-app`), hubs moved to `logosctl`, macOS/ARM variants rebuilt with the same builder and
 merged.
 
+**Delivery 0.3's reliable channels drop what they can't order.** A channel message whose causal
+history the node never saw is held ("SDS message has missing dependencies") and then dropped
+("stash full"); it reaches no app. Two fresh test nodes never hit it; a desktop joining phones
+or peers with history does (a phone's form never reached a desktop; Swamp, Scala and WhisperBox
+topics stashed by the thousand). Apps with their own catch-up (RBSR) should run loam_core in plain
+relay mode: `start({"mode":"Core","preset":"logos.test","useChannels":false})`. loam_core still
+unwraps channel frames from phones on the relay path, and phones' loam-transport accepts plain
+relay messages. After the switch, form A->B went from 64 s to instant.[^plain]
+
 ## Known open items (say so; don't paper over them)
 
 - Every new-library channel message carries an ~18.7 KB SDS bloom filter (~25 KB per message,
@@ -147,5 +156,6 @@ merged.
 [^p03mem]: Memory `port-0-3` ("v0.3.0 (and the old fork!) emit event payloads as {"_bytes": URL-SAFE base64} → old decoder truncated at '-'/'_'"; loam_core 0.5.2 + compat 0.4.19).
 [^builder]: `docs/port-0.3/analysis-basecamp-builder.md` § Key findings + § Checklist (builder 0.3.1 `16e2f6b`; LIDL requirement `lib/common.nix:167-213`; icons `package.cpp:54-121`; version ranges `module_manager.cpp:851-868`; default args `impl_header_parser.cpp:893-905`; QML `logos` timeouts). QtBluetooth: memory `ble-mesh-qtbluetooth-bundle`.
 [^stor]: `docs/port-0.3/analysis-storage.md` § 2a (API table, 30 s manifest wait, busy `destroy`) and memory `port-0-3` finding 2 (host-owned Storage, `AsyncResult` with a 60 s timeout).
-[^fork09]: Swamp 0.5.6 on a Lenovo Duet and vpavlin's laptop, 2026-10-09: delivery_module 0.9.0 installed from `apps.vpavlin.xyz/logos-repo.json` + the 0.2-era LAN repo; 1375 "stash full" lines and `channel_message_received` 0 in the newest log; after installing delivery 0.3.2 the Duet received a hub-only model. Fork versions 0.9.0/0.2.3/0.1.4 dropped from the public catalogue the same day (the maintainer's agent).
+[^fork09]: Swamp 0.5.6 on a Lenovo Duet and vpavlin's laptop, 2026-10-09: delivery_module 0.9.0 installed from `apps.vpavlin.xyz/logos-repo.json` + the 0.2-era LAN repo; 1375 "stash full" lines and `channel_message_received` 0 in the newest log; after installing delivery 0.3.2 the Duet received a hub-only model. Fork versions 0.9.0/0.2.3/0.1.4 dropped from the public catalogue the same day (by the maintainer).
 [^wb]: `vpavlin/whisperbox-logos` branch `port/0.3` (`0b13b60` desktop, `4faf244` Android with loam-transport `2a472be`): all 8 test layers green (e2e 201/201, JS<->C++ interop with raw and base64 envelopes); live logosctl two-node on logos.test, form A->B in 64 s and the answer back decrypted in 3 s.
+[^plain]: Basecamp log (delivery_module 0.3.2, loam_core 0.6.1), 2026-10-09: 1109 "missing dependencies" + 1107 "stash full" on `/whisperbox/1/all/proto`, while the app's receive counter stayed flat. Fixed in WhisperBox 0.4.1 / Swamp 0.5.9 (`useChannels:false`); loam_core `delivery_bearer.hpp` peels SDS field 5 + SegmentMessage on the relay path; loam-transport `real-node.ts` handles `message_received`.
