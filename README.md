@@ -26,6 +26,7 @@ They are **generic playbooks** (any domain: shared calendars, activity trackers,
 | **loam-keycard** | **Hardware & multiple identities.** A Status Keycard (NFC) as a per-person signer — on-card tap-per-sign, the choppu RN stack, the three sig adapters + the silent traps (`res.data.cbFuncResponse` nesting, reader-wedge, `buffer` bundle break); multiple authoring identities bound per container; one card = one identity across phone (NFC) + desktop (PC/SC) via `domainToSignPath`; `signaturesRequired`; custody/delegation; desktop signing. |
 | **loam-integrate-app** | Integrate a React-Native app as a **client of the device-wide Loam shared delivery node** (many apps → one Waku/Logos node): the `preferServiceBackend` ordering, service binding, the approval prompt, and the "shared enabled but runs its own node" gotchas. |
 | **loam-update-app** | Move a Loam mobile app onto a newer `loam-transport` SDK: bump the submodule, rebuild the release APK, publish — encoding the build traps (`expo prebuild --clean` wiping `local.properties`, the shim entry-file import, submodule realign). |
+| **logos-app-sdk** | **Share one app's data with another app.** Move the mobile engine (`mobile/src/lib`) into its own SDK repo with history (`git subtree split`), mount it back at the same path as a submodule, `peerDependencies`, an app-id setter for Loam, SDK-first changes with parity tests in the app. Desktop consumers call the core module instead. |
 
 ## Install
 
