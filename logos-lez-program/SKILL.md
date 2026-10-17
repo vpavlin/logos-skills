@@ -147,8 +147,10 @@ Specifically check, by reading the code (not just running the happy-path test):
   it's gone. It also slows honest recovery.
 - **Who can trigger a record or a publish?** If anyone can, the attacker chooses the sampling times;
   assess the two items above with that in mind.
-- **Does the "window" actually bound the average?** Check what span it really covers (since creation?
-  the whole buffer at whatever cadence people record?) versus what its name promises.
+- **Does the "window" actually bound the average?** A buffer-based average is the usual way this
+  breaks: averaging "oldest buffered entry to now" silently reports a window as wide as the buffer has
+  existed until it fills, then "buffer size × recording cadence" after — neither is the window's
+  stated duration unless the code explicitly bounds by elapsed time.
 - **Is the published timestamp the data's age, or the publish time?** If publishing stamps `now`, any
   caller can refresh a consumer's staleness check over stale or shaped data.
 - **Liquidity awareness.** Drain the source pool to its minimum and trade dust: if the feed follows,

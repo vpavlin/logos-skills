@@ -67,7 +67,10 @@ Goal: a review the author can act on. Every finding is reproduced or clearly mar
   - Do balances refresh after each transaction?
   - Does the fee shown match the fee charged (compare with the on-chain delta)?
   - Do two screens showing the same value agree?
-  - Is number formatting consistent under the user's locale (an AppImage inherits it)?
+  - Is number formatting consistent under the user's locale (an AppImage inherits it)? Compare the
+    separator used by every number on one screen — a value rendered via a different code path
+    (computed client-side vs. echoed verbatim from an API response) can silently pick up a different
+    locale convention than its neighbours.
   - Do defaults hurt the user (e.g. a minimum deposit where a fixed protocol lock dominates), and does
     the confirm step warn them?
 - `$!` after `cd x && prog &` is the subshell's PID, not the program's; record the real PID (`pgrep -x`, or start with `setsid prog &` on its own line) or `kill` will silently miss it.
