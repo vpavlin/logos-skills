@@ -204,6 +204,8 @@ This is the **canonical index** of the skill set: every skill is listed here, an
 - **Mobile embed (JNI, config plugin, F-Droid, "phone receives nothing"):** `logos-mobile-app`.
 - **Publishing artifacts to Basecamp/F-Droid repos:** `logos-publish-artifacts`; the F-Droid
   repo itself (keys, metadata, http repo_url, verifying the served index): `logos-fdroid`.
+- **Publishing APKs to a Backpack repo (Logos Storage app store; add, publish, verify, F-Droid
+  mirror, private repos):** `backpack-publish`.
 - **Attachments, media, log snapshots (Logos Storage):** `logos-storage`.
 - **RLN message budget:** `logos-rln-budget`.
 - **macOS / Linux ARM64 packages (CI build + merge):** `logos-multiplatform-modules`.
