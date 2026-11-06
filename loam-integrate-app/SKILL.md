@@ -143,7 +143,7 @@ reintroduce them.
   (or re-created) after it replayed the buffered `register` calls, it never learns about the app: the
   app's `subscribe` is queued as "awaiting approval" forever (it is already approved) and its
   `storeSync` is dropped. Symptom: "looks connected, receives nothing, restarting the app fixes it".
-  Fixed in Loam 0.0.66 (the service replays every connected app's register and topics on each JS
+  Fixed in Loam 0.0.66, not yet confirmed on a device as of 2026-11-02 (the service replays every connected app's register and topics on each JS
   start, and restores approved apps detached at boot). On the client side, re-check with the service
   before a store pull and keep the periodic `refreshPeerInfo`, so the re-subscribe on node-up can
   fire.[^race]
