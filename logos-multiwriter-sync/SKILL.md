@@ -147,6 +147,35 @@ minutes.[^budget]
   the finding per (peer, item) and withdraw it when a newer state includes the item. A peer that
   was merely late is otherwise blamed forever.
 
+## Admission on an open topic (assume hostile peers)
+
+Anyone who knows a topic can publish to it, and on a shared or public topic (open forms, a public
+board) that means strangers. Three rounds of security review on one such app produced these rules;
+none of them is app-specific.[^admit]
+
+- **Budget what you ingest, per class.** Token buckets per sender-independent class: content events,
+  signed/privileged events, control and catch-up frames (smaller). Once a bucket is empty, drop
+  until it refills. Example numbers that held up: 600/min for content, 120/min for control frames.
+- **Charge before the expensive work.** Take the budget before signature verification, decryption
+  or parsing, so forged signatures and garbage cost the attacker budget, not your CPU. Replays and
+  duplicates count too.
+- **Cap sizes, and charge replacements.** Refuse oversized events and over-long ids (an id that
+  breaks your share links is an attack too). If a later copy of an event replaces a held one,
+  charge it its size; never let a different copy (another HLC, upper-case hex) replace the held one.
+- **Bound the catch-up responder.** Refuse requests with bad bounds, budget them like everything
+  else, and index the log so one request can't make you scan all of it.
+- **Test budgets with pre-built input.** Prepare every frame first, then ingest in a tight loop; a
+  test that seals/signs between ingests lets the bucket refill on a slow machine and flakes.
+
+**Sender clocks are claims.** An event's HLC wall time is whatever the sender wrote, so it can be
+backdated past a deadline or a close. For rules that depend on time:
+- use the local **first-seen** time, and the network's own message timestamp only when it is within
+  a few minutes (5 min held up) of the local clock; otherwise treat the event as having no time;
+- mark events without a trustworthy time as "time not verified" in the UI rather than pretending;
+- decide explicitly what happens to an unverified event that arrives after a close. Dropping it
+  stops backdating but also drops honest writers who were offline; keeping and labelling it is the
+  other choice. Neither is free; write the choice down.
+
 ## Parity: one reference, mirrored implementations
 When the same fold runs in two languages (e.g. a JS reference + a C++ core), define it **once** as the reference and guard the port with **golden-vector fixtures + a cross-language parity test** — validate logic, not just the codec.[^17] The reference here keeps its C++ mirror byte-identical (24/24 parity), down to the reconciliation fingerprint.[^17][^12]
 
@@ -164,6 +193,7 @@ When the same fold runs in two languages (e.g. a JS reference + a C++ core), def
 - [ ] If events are signed: gate leniently — verify all, but only DROP privileged/gated events on a bad sig; open/participant events are admitted with `verified:false`, never dropped.[^21]
 - [ ] Transport = app-level AEAD envelope carried on plain relay; SDS channels only for a topic that opts in (channel mechanics, no-op provider, receive gates → `logos-reliable-channels`); hub + RBSR for backfill, minding the two hub gotchas.[^13][^12][^20]
 - [ ] Cross-user sharing: roles admitted deterministically on merge; privacy boundary = which key/dataset.[^16]
+- [ ] On an open topic: per-class ingest budgets charged before verify/decrypt, size caps, a bounded catch-up responder, and an explicit rule for events whose time can't be trusted.[^admit]
 
 ## Where else this applies
 
@@ -204,3 +234,4 @@ All paths are repo-relative to `github.com/vpavlin/kym` (origin project, used he
 [^25]: Scala mobile `publishAndApply` awaited `sync.sendEvent` → every mutation blocked on an IPC hop to the shared node (fixed 0.9.81); verify memo + persisted cache (0.9.89, cold fold 4.2 s → fast; fold output unchanged, C++/TS parity intact). Memory `scala-local-first-write-path`.
 [^26]: loam-sync ADR 0020 (log snapshots), TS `src/snapshot.ts` + C++ `snapshot.hpp` with a byte-identical serializer proven by a golden test; hub writer → phone reader proven end-to-end 2026-09-25. Memory `rln-readiness-plan`.
 [^budget]: Swamp 0.5.6 (`swamp_core_impl.cpp`: `kCatchupBehindMs` 15 s, `kCatchupFreshMs` 30 s for 5 min, `serveEvents(..., budgeted=false)` for audit re-sends, `m_omissions` keyed `<indexer>|<model>` and erased when included). Found after a review showed the "flaky" e2e checks were deterministic; 102/102 three runs in a row after the fix.
+[^admit]: WhisperBox (vpavlin/whisperbox-logos, an open-forms app) review rounds 2026-11-02 to 2026-11-05: `whisperbox_core` admission buckets (600/min answers and signed events, 120/min control frames), budget charged before signature verification, indexed RBSR responder, ±5 min network-time window, first-seen close rule; tests in vpavlin/whisperbox-sdk `client/test/round3-5`. The budget-test flake (sealing inside the ingest loop) was fixed 2026-11-06.
