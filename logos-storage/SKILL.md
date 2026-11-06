@@ -171,6 +171,53 @@ with files read from and written to this computer. An app can then offer both wi
 - A NAT-ed node fetching from the server: `connect(serverPeer, [its /ip4/…/tcp/…])` first helps, and the
   server itself needs the #1540 fix to fetch FROM a NAT-ed node (with it: ~2 min for a small file).
 
+## More traps (as of 2026-11)
+
+- **A node advertises at most ~500 CIDs.** The vendored nim-libp2p Kademlia caps both provided keys
+  and provider records at 500 by default, and libstorage builds its DHT with the defaults. A node
+  holding more than that announces only the ~500 it re-provided most recently. Fetching a manifest asks
+  only the DHT, never peers you are already connected to, so the rest fail with "Failed to fetch
+  manifest … Key doesn't exist" even while connected to the holder. If one node holds thousands of
+  files (a backup target, an app repo host), raise the capacities and fall back to connected peers
+  for the manifest (both carried on a fork as of 2026-11-05: `vpavlin/nim-codex@0f3e5cf`, capacities
+  20,000; connected peers still serve only manifests they advertise; no upstream PR yet), or spread
+  the data. Provider records live in memory only, on both sides, and a holder re-provides on a
+  ~30-minute sweep, so which ~500 are findable shifts over time. A client fetching many CIDs must go
+  past the ones it can't find yet and retry them later: one that restarts at the first miss
+  fetches nothing.
+- **`--block-ttl 0` deletes, it doesn't mean "forever".** Expiry is `now + ttl`, and the maintainer
+  removes expired blocks: with ttl 0 an upload is gone within seconds. The default is **30 days**, so
+  a server node started without the flag silently drops everything a month after upload. Use a huge
+  value (e.g. `--block-ttl=3153600000`, 100 years). Restarting with a new TTL changes only new blocks;
+  to extend existing ones, re-upload the same bytes with the same block size, filename and
+  content type (they are part of the manifest), and check the returned CID is unchanged.
+- **Slow downloads from peers you `connect()`ed to.** Peers added with `connect()` join the download
+  swarm without ever being asked what they hold, so each batch waits for a per-batch presence answer
+  and falls back to a 2 s retry: about one batch every 2 s (64 KiB/s with 64 KiB blocks). The same
+  holder found through the DHT gives MB/s. Fix: logos-storage-nim#1575 (open as of 2026-11-01); only
+  the *downloading* node needs it. Without it, prefer DHT discovery over an explicit `connect()` for
+  big files.
+- **Every upload is a manifest, a tree and 64 KiB blocks.** Many mid-sized objects become millions
+  of blocks and thousands of manifests (a 150 GB restic repository: 9,500 manifests, 2.4 M blocks),
+  and node to node it measured 4-5 MiB/s on a link that carries several times that (as of
+  2026-11-05). Between machines that already know each other's addresses and trust each other
+  (your own devices on a mesh), a direct transfer is simpler and faster; Storage pays off where data
+  must be found by CID from holders you don't know in advance. If you do store many objects, make
+  them bigger (e.g. restic `--pack-size 64`).
+- **The manifest carries the filename and content type** you upload with: the same bytes under
+  another name get another CID (blocks are shared, the manifest isn't). Name uploads
+  deterministically if you rely on the CID being stable.
+- **A peer's SPR changes on every restart of that peer** (its sequence number), with the same peer id
+  and addresses. If you restart a node when its bootstrap SPRs change, compare peer id and addresses
+  (decode the record), not the string, or every peer restart restarts your node.
+- **Bootstrap flags are read at start only**, `--bootstrap-node` and `--no-bootstrap-node` exclude
+  each other, and any custom bootstrap node replaces the public ones. A private DHT of your own nodes
+  is just that: each started with the others' SPRs (or `--no-bootstrap-node` when alone), restarted
+  when the set changes.
+- The node logs warnings (e.g. failed manifest fetches) on stdout/stderr: capture them, or a server
+  failing for hours leaves nothing to read.
+- The REST API ignores HTTP `Range` (it answers 200 with the whole body).
+
 ## Address traps
 
 - **No `extip` = no announced address.** A node announces exactly its `nat=extip:<addr>`; without it
@@ -182,8 +229,13 @@ with files read from and written to this computer. An app can then offer both wi
   patch if you dial IPv6 peers without an extip.
 - **Private/ULA addresses are dropped** from the DHT when the network is public (libstorage v0.5.1):
   overlay/mesh addresses (`fd00::/8`) won't propagate via a public bootstrap. Unverified in practice.
+  A private DHT on mesh ULAs, bootstrapped only from each other's SPRs, does work (as of 2026-11-05).
 - **IPv4-only filters on overlays:** on one overlay mesh, IPv6 carried every port while IPv4 only
   passed SSH. Test with a live listener before concluding "the mesh refuses TCP".[^addr]
+- **Ping works, TCP doesn't: check the host firewall on the overlay interface.** A distro firewall
+  (NixOS's, or firewalld, where an interface sits in exactly one zone and moves when another zone
+  claims it) drops TCP on the mesh interface while ICMP passes. Open the node's port on that
+  interface, and re-check after anyone edits zones.
 
 ## Mobile
 
@@ -192,6 +244,11 @@ node does: see storage_gateway above). A **fetch-only** Android client
 is feasible: libstorage cross-compiled to arm64 with the NDK, behind a JNI/RN bridge, downloading by
 CID from reachable providers (in practice, the hub). Uploading from phones stays out of scope; phones
 author events, desktops or hubs hold blobs. (Upstream tracking issue: logos-storage-nim#1221.)[^mobile]
+
+If the phone already runs a **shared node** that bundles libstorage (Loam, see `loam-integrate-app`),
+fetch through it instead of putting libstorage into every app: one node, one cache, one set of
+connections, and apps stay small. Pass the holder's peer id *and* addresses with the request (a signed
+peer record in the invite is the easy way), since the node has to dial it.
 
 ## Snapshots — the catch-up lever
 

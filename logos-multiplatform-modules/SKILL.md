@@ -26,7 +26,7 @@ gh release view <tag> --repo logos-co/logos-basecamp --json assets -q '.assets[]
 | Platform | `lgx` variant | Runner | Notes |
 |---|---|---|---|
 | Linux x86_64 | `linux-amd64` | your box / `ubuntu-latest` | the base everything else merges into |
-| macOS Apple Silicon | `darwin-arm64` | `macos-14` | Basecamp ships an aarch64 `.dmg` |
+| macOS Apple Silicon | `darwin-arm64` | `macos-15` | Basecamp ships an aarch64 `.dmg`; `macos-14` is retired (as of 2026-11) |
 | Linux ARM64 | `linux-arm64` | `ubuntu-24.04-arm` | Basecamp ships an aarch64 AppImage |
 | Intel Mac | `darwin-amd64` | — | **skip:** Basecamp ships no Intel-Mac build |
 | Windows x86_64 | — | cross from Linux | only modules built with **module-builder 0.3.x** (it adds the `x86_64-windows` cross target); a 0.2.x stack must be upgraded first, and each native dependency must cross-build too |
@@ -41,7 +41,7 @@ gh release view <tag> --repo logos-co/logos-basecamp --json assets -q '.assets[]
    a repo's `.github/workflows/`. Each line of the `modules` input is `name=flakeref [extra nix
    args]`; pin commits. Run once per platform:
    ```sh
-   gh workflow run platform-modules.yml --repo <owner>/<repo> -f runner=macos-14 -f modules="$LIST"
+   gh workflow run platform-modules.yml --repo <owner>/<repo> -f runner=macos-15 -f modules="$LIST"
    gh workflow run platform-modules.yml --repo <owner>/<repo> -f runner=ubuntu-24.04-arm -f modules="$LIST"
    gh run download <run-id> --repo <owner>/<repo> -D out-<platform>
    ```
@@ -118,6 +118,24 @@ the check catches it before a user does.[^swamparm]
   RUNPATH `$ORIGIN`), or patch a built package with `lgx add --variant <v>` — it replaces the whole
   variant, so pass all the old files plus the new one; it recomputes the hashes. Check the other
   platforms' variants too: each needs its own copy of the library.[^qtbt]
+- **macOS: a dependency's library names itself `./libfoo.dylib`.** Some prebuilt dylibs
+  (pdfium-binaries is one) carry a relative install name; the linker copies it into your plugin's
+  load commands and the portable bundler stops with "non-portable load command". Rewriting it to
+  `@rpath/libfoo.dylib` silences that but the bundler does not follow `@rpath`, so the library is left
+  out and the plugin can't load on a Mac. Rewrite it to the library's **absolute store path** in a
+  darwin-only post-build step, so the bundler copies it and points the plugin at the bundled copy:
+  ```cmake
+  if(APPLE)
+    get_filename_component(LIB_REAL "${FOO_LIBRARY}" REALPATH)
+    add_custom_command(TARGET ${MODULE_NAME}_module_plugin POST_BUILD
+      COMMAND install_name_tool -change ./libfoo.dylib "${LIB_REAL}" $<TARGET_FILE:${MODULE_NAME}_module_plugin>
+      VERBATIM)
+  endif()
+  ```
+  Check with `llvm-objdump --macho --dylibs-used` on every dylib in the darwin variant: only
+  `@loader_path`, `@rpath/Qt*` and libraries Basecamp's app bundle ships should remain.[^dylib]
+- **A runner job "cancelled" with no steps run** happened on GitHub's side, not in your build (seen
+  once on `macos-15`, 2026-11-06): re-run it, e.g. by deleting and re-pushing the tag.
 - **The library inside differs by platform.** If the Linux package was built from a patched or
   local fork of a native library and CI builds upstream, the platforms now run different code.
   Record which build each variant came from; publish the patched fork so it's reproducible.[^fork]
@@ -139,3 +157,4 @@ build-then-merge path takes in Windows once the stack is on a builder that cross
 [^lidl]: `loam-basecamp` `port/0.3` `docs/port-0.3/analysis-basecamp-builder.md` § Packages ("0.3.1 ships contracts in `assets/lidl/`; `lgx merge` refuses differing contract bytes → same builder on every platform").
 [^qtbt]: Memory `ble-mesh-qtbluetooth-bundle` (ble_mesh 0.1.0 failed on stock Basecamp 0.3.1; 0.1.1 bundled `libQt6Bluetooth.so.6` from qtconnectivity 6.9.2 with RUNPATH `$ORIGIN` via `lgx add`, load-tested against the extracted AppImage libs; ble_mesh 0.2.0 bundles it from the flake, memory `port-0-3`). The scan of 20 modules found it the only missing Qt lib.
 [^swamparm]: `vpavlin/swamp3d` `.github/workflows/arm64.yml` (releases `arm64-0.5.5-1`, `arm64-0.5.6`); merged with `lgx-merge-platforms.sh` (amd64 byte-identical); swamp_core loaded on the Duet (ARMv8.0) against Basecamp 0.3.1's bundled libs.
+[^dylib]: vpavlin/zine-press 0.1.1 → 0.1.2 (2026-11-06): pdfium-binaries `./libpdfium.dylib`; `@rpath` left it unbundled, the absolute store path got it bundled; dylib references checked against Basecamp's macOS app (which ships libz and libintl).

@@ -44,11 +44,12 @@ tracker, and Loam — the shared transport they all ride on.
 
 ## 5. The transport: Delivery, SDS, RBSR — and Loam
 
-- Logos Delivery (Waku) carries sealed bytes; SDS Reliable Channels add ordering, gap detection and
-  retransmit; app-level range-based reconciliation (RBSR) handles cold start.
+- Logos Delivery (Waku) carries sealed bytes on plain relay; app-level range-based reconciliation
+  (RBSR) fills gaps and handles cold start. SDS Reliable Channels (ordering, gap detection, retransmit
+  inside the delivery layer) are opt-in per topic since 2026-11-03.
 - Loam runs **one** delivery node per device for every app (an AIDL service on Android, a
   `loam_core` module on desktop), with a BLE mesh bearer for no-network moments.
-- Five silent failure modes live here (subscribe vs channelCreate, the encryption provider, the
+- Five silent failure modes live here for topics on SDS channels (subscribe vs channelCreate, the encryption provider, the
   wire marker, base64 depth, echoes) — memorise them.
 - → [reliable-channels](logos-reliable-channels/SKILL.md), [loam-integrate-app](loam-integrate-app/SKILL.md), [loam-update-app](loam-update-app/SKILL.md)
 

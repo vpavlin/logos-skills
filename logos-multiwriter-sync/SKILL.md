@@ -1,6 +1,6 @@
 ---
 name: logos-multiwriter-sync
-description: "Playbook for multi-writer, offline-convergent sync in a Logos/Waku app: event-sourced CRDT fold, HLC ordering, commutative deltas, an app-level AEAD envelope carried over SDS Reliable Channels, and a hub+RBSR backfill path — with the two hub gotchas that make it connect yet ingest nothing."
+description: "Playbook for multi-writer, offline-convergent sync in a Logos/Waku app: event-sourced CRDT fold, HLC ordering, commutative deltas, an app-level AEAD envelope carried over plain relay (SDS Reliable Channels opt-in), and a hub+RBSR backfill path — with the two hub gotchas that make it connect yet ingest nothing."
 ---
 
 Playbook for giving a Logos/Waku app **multi-writer sync**: several devices or people edit shared state while offline and must converge to identical state **without any write being lost** — and, when needed, share one dataset across users with roles. Works for a shared calendar, an activity tracker, collaborative notes, a household ledger, a Q&A board — anything where "last write wins" would silently drop someone's change.
@@ -94,7 +94,7 @@ Ke      = HKDF-SHA256(K, info="…/payload/v1")
 payload = nonce(12) ‖ ChaCha20-Poly1305(Ke, nonce, plaintext, aad=topic)
 ```
 
-**Carry those sealed bytes on SDS Reliable Channels, not raw relay** — they give ordering, gap detection, retransmit and causal history *inside* the delivery layer (mature, 30+ releases).[^13] The channel API surface (`channelCreate`/`channelSend`/`onChannelMessageReceived`, `channelId == contentTopic == derived topic`, `senderId == deviceId`), the load-bearing **no-op encryption provider** (SDS refuses a channel with no Encrypt provider, and the app already does its own AEAD above), the receive-chain, and the four silent-failure gates that otherwise make a joined channel decode nothing are the sibling skill's material — **see `logos-reliable-channels`**. This skill owns only what rides *inside* the channel: the AEAD envelope above.
+**Carry those sealed bytes on plain relay by default (as of 2026-11-06).** The RBSR catch-up below already finds and fills gaps, so SDS's in-layer ordering, gap detection and retransmit add per-message overhead without adding convergence (why: `logos-reliable-channels`, "Default: plain relay"). If a topic does opt into SDS Reliable Channels,[^13] its API surface (`channelCreate`/`channelSend`/`onChannelMessageReceived`, `channelId == contentTopic == derived topic`, `senderId == deviceId`), the load-bearing **no-op encryption provider** (SDS refuses a channel with no Encrypt provider, and the app already does its own AEAD above), the receive-chain, and the four silent-failure gates that otherwise make a joined channel decode nothing are the sibling skill's material — **see `logos-reliable-channels`**. This skill owns only what rides *inside* the channel: the AEAD envelope above.
 
 ### Backfill: no Store ⇒ you need a hub + set reconciliation
 On the 0.1.x delivery fork, `liblogosdelivery` exposes **no Waku Store query on desktop**, so someone must be online to re-serve history. (Upstream delivery_module v0.3.0 adds `storeQuery` and replays missed messages by default — useful, but it returns only what fleet store nodes still hold, so the hub + RBSR below remain the guarantee.) Two pieces:[^12][^13]
@@ -147,6 +147,35 @@ minutes.[^budget]
   the finding per (peer, item) and withdraw it when a newer state includes the item. A peer that
   was merely late is otherwise blamed forever.
 
+## Admission on an open topic (assume hostile peers)
+
+Anyone who knows a topic can publish to it, and on a shared or public topic (open forms, a public
+board) that means strangers. Three rounds of security review on one such app produced these rules;
+none of them is app-specific.[^admit]
+
+- **Budget what you ingest, per class.** Token buckets per sender-independent class: content events,
+  signed/privileged events, control and catch-up frames (smaller). Once a bucket is empty, drop
+  until it refills. Example numbers that held up: 600/min for content, 120/min for control frames.
+- **Charge before the expensive work.** Take the budget before signature verification, decryption
+  or parsing, so forged signatures and garbage cost the attacker budget, not your CPU. Replays and
+  duplicates count too.
+- **Cap sizes, and charge replacements.** Refuse oversized events and over-long ids (an id that
+  breaks your share links is an attack too). If a later copy of an event replaces a held one,
+  charge it its size; never let a different copy (another HLC, upper-case hex) replace the held one.
+- **Bound the catch-up responder.** Refuse requests with bad bounds, budget them like everything
+  else, and index the log so one request can't make you scan all of it.
+- **Test budgets with pre-built input.** Prepare every frame first, then ingest in a tight loop; a
+  test that seals/signs between ingests lets the bucket refill on a slow machine and flakes.
+
+**Sender clocks are claims.** An event's HLC wall time is whatever the sender wrote, so it can be
+backdated past a deadline or a close. For rules that depend on time:
+- use the local **first-seen** time, and the network's own message timestamp only when it is within
+  a few minutes (5 min held up) of the local clock; otherwise treat the event as having no time;
+- mark events without a trustworthy time as "time not verified" in the UI rather than pretending;
+- decide explicitly what happens to an unverified event that arrives after a close. Dropping it
+  stops backdating but also drops honest writers who were offline; keeping and labelling it is the
+  other choice. Neither is free; write the choice down.
+
 ## Parity: one reference, mirrored implementations
 When the same fold runs in two languages (e.g. a JS reference + a C++ core), define it **once** as the reference and guard the port with **golden-vector fixtures + a cross-language parity test** — validate logic, not just the codec.[^17] The reference here keeps its C++ mirror byte-identical (24/24 parity), down to the reconciliation fingerprint.[^17][^12]
 
@@ -162,8 +191,9 @@ When the same fold runs in two languages (e.g. a JS reference + a C++ core), def
 - [ ] The write path never `await`s the send; unsent events carry a "syncing" badge; signature verify is memoized.[^25]
 - [ ] Signed payloads never contain `undefined` values; the canonicaliser skips them on every platform.[^24]
 - [ ] If events are signed: gate leniently — verify all, but only DROP privileged/gated events on a bad sig; open/participant events are admitted with `verified:false`, never dropped.[^21]
-- [ ] Transport = app-level AEAD envelope carried on SDS Reliable Channels (channel mechanics, no-op provider, receive gates → `logos-reliable-channels`); hub + RBSR for backfill, minding the two hub gotchas.[^13][^12][^20]
+- [ ] Transport = app-level AEAD envelope carried on plain relay; SDS channels only for a topic that opts in (channel mechanics, no-op provider, receive gates → `logos-reliable-channels`); hub + RBSR for backfill, minding the two hub gotchas.[^13][^12][^20]
 - [ ] Cross-user sharing: roles admitted deterministically on merge; privacy boundary = which key/dataset.[^16]
+- [ ] On an open topic: per-class ingest budgets charged before verify/decrypt, size caps, a bounded catch-up responder, and an explicit rule for events whose time can't be trusted.[^admit]
 
 ## Where else this applies
 
@@ -173,7 +203,7 @@ The origin is a household-budget app, but nothing here is finance-specific — t
 - **Collaborative notes / docs:** each keystroke-batch or block op is an event; block ordering uses the HLC total order; a delete is a sticky tombstone so a late edit can't resurrect a removed block; RBSR backfills a device that was offline for a week without resending the whole doc.
 - **Multiplayer Q&A / forum:** upvotes are commutative deltas; post edits supersede; roles (mod/member/viewer) are admitted deterministically on merge exactly like the group-sharing path; a private board is just a key you don't share.
 
-Only two things are domain-specific and get swapped out: the **payload schemas** (the `type`/`payload` table) and the **invariant** you assert. The event-log + fold + HLC + commutative-delta skeleton, the AEAD-envelope-over-SDS-channel transport, and the hub/RBSR backfill (with its two hub gotchas) are identical across apps. The channel *mechanics* themselves live in the sibling `logos-reliable-channels` skill and are shared verbatim by every Logos app that syncs.
+Only two things are domain-specific and get swapped out: the **payload schemas** (the `type`/`payload` table) and the **invariant** you assert. The event-log + fold + HLC + commutative-delta skeleton, the AEAD-envelope-over-relay transport, and the hub/RBSR backfill (with its two hub gotchas) are identical across apps. The channel *mechanics* themselves live in the sibling `logos-reliable-channels` skill and are shared verbatim by every Logos app that syncs.
 
 ## Sources & evidence
 
@@ -204,3 +234,4 @@ All paths are repo-relative to `github.com/vpavlin/kym` (origin project, used he
 [^25]: Scala mobile `publishAndApply` awaited `sync.sendEvent` → every mutation blocked on an IPC hop to the shared node (fixed 0.9.81); verify memo + persisted cache (0.9.89, cold fold 4.2 s → fast; fold output unchanged, C++/TS parity intact). Memory `scala-local-first-write-path`.
 [^26]: loam-sync ADR 0020 (log snapshots), TS `src/snapshot.ts` + C++ `snapshot.hpp` with a byte-identical serializer proven by a golden test; hub writer → phone reader proven end-to-end 2026-09-25. Memory `rln-readiness-plan`.
 [^budget]: Swamp 0.5.6 (`swamp_core_impl.cpp`: `kCatchupBehindMs` 15 s, `kCatchupFreshMs` 30 s for 5 min, `serveEvents(..., budgeted=false)` for audit re-sends, `m_omissions` keyed `<indexer>|<model>` and erased when included). Found after a review showed the "flaky" e2e checks were deterministic; 102/102 three runs in a row after the fix.
+[^admit]: WhisperBox (vpavlin/whisperbox-logos, an open-forms app) review rounds 2026-11-02 to 2026-11-05: `whisperbox_core` admission buckets (600/min answers and signed events, 120/min control frames), budget charged before signature verification, indexed RBSR responder, ±5 min network-time window, first-seen close rule; tests in vpavlin/whisperbox-sdk `client/test/round3-5`. The budget-test flake (sealing inside the ingest loop) was fixed 2026-11-06.

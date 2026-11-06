@@ -50,13 +50,13 @@ Classify every mutation:
 - **Edit / delete are events, never overwrites.** An edit is a **superseding** event (same target id, higher HLC); a delete is a **tombstone**. The fold applies supersede/tombstone during projection. Sync semantics are unchanged — they are just more events in the union.[^6]
 
 ### 1.4 Tenant / group model
-- One shared dataset = one **32-byte secret** = one derived **content topic** = one **reliable channel**. A device can hold several at once and sync them all in the background.[^7]
+- One shared dataset = one **32-byte secret** = one derived **content topic** (a channel only if that topic opts into SDS). A device can hold several at once and sync them all in the background.[^7]
 - **Sharing = who has the secret.** A dataset whose pairing code you never share stays private (but still pairs across your own devices + hub).[^7]
 - If you need **roles**: fold membership from events (`group.init` → founding admin, `member.add/role/remove`) in HLC order and admit each event by its author (`hlc.dev`).[^8] Until a `group.init` appears, treat the dataset as personal/household and admit everything (backward compatible).
 - **Enforcement is on merge, and it is the only enforcement possible** in an append-only p2p log. Roles are attribution + admission, not cryptographic access control. Anyone with the secret can write. Per-member cryptographic ACLs (MLS/forward secrecy) are a later, separate layer — don't block on them.[^8]
 
 ### 1.5 Transport
-Use **SDS Reliable Channels** (see logos-reliable-channels). It gives ordering, gap detection, retransmit, segmentation, causal-history references — inside the delivery layer, for free.[^9] Prefer it over hand-rolling ack/retransmit on raw `subscribe`/`send`, and over libchat (whose groups are plain relay, unpersisted, add-only, no mobile).[^10]
+Use **plain relay** (`subscribe`/`send` on the derived topic) and let the app's catch-up (§1.7, RBSR) find and fill gaps (as of 2026-11-06). SDS Reliable Channels add ordering, gap detection and retransmit inside the delivery layer,[^9] but on top of an app-level catch-up they mostly add cost: a causal-history bloom on every message, silent `channelCreate` failures, and channel state that wedged on some `delivery_module` versions (details and the measurement: `logos-reliable-channels`, "Default: plain relay"). Opt a topic into SDS only if it has no app-level catch-up. Not libchat (its groups are plain relay, unpersisted, add-only, no mobile).[^10]
 
 ### 1.6 Crypto
 Derive everything from one pre-shared secret `S`:
@@ -69,7 +69,7 @@ wire payload = nonce(12) ‖ ChaCha20-Poly1305(Ke, nonce, plaintext, aad=content
 The topic is HMAC-derived (unlinkable without `K`); the payload is AEAD-sealed with the topic as AAD, so a wrong key or wrong topic fails the tag.[^11] The channel layer does **not** give you content encryption — you seal before handing bytes to the transport, and `open()` after receive.[^9]
 
 ### 1.7 Cold-start history
-The reliable channel syncs **live** traffic; it does **not** backfill state across a cold start / fresh join.[^9] Pick one before you ship:
+The transport (relay, or a channel) syncs **live** traffic; it does **not** backfill state across a cold start / fresh join.[^9] Pick one before you ship:
 - **rebroadcast-on-join** — an online peer re-sends its log to newcomers (simple; noisy; fine as a safety net).
 - **store-query pull** — a joiner pulls history from a fleet store node via `waku_store_query` (reliable, no rebroadcast; mobile-only on some builds — the desktop `delivery_module` may not bridge it).[^12]
 - **RBSR / Negentropy reconciliation** — peers exchange range fingerprints and transfer only the symmetric difference of event-ids.[^13] Most bandwidth-efficient; more code.
@@ -100,10 +100,12 @@ Still logos-multiwriter-sync.
 
 **Gate:** round-trip seal→open with the right key succeeds; wrong key throws.
 
-### Step 3 — Reliable-channel transport (two desktop cores converge)
-Load **logos-reliable-channels**. Load **logos-distributed-debugging** now and keep it open.
+### Step 3 — Transport (two desktop cores converge)
+Load **logos-distributed-debugging** now and keep it open.
 
-The SDS app-facing surface is three calls + three events:[^9]
+Default (as of 2026-11-06): **plain relay.** Subscribe the derived content topic, `send(contentTopic, sealed)`, handle `messageReceived`, and rely on the §1.7 catch-up for anything missed. With a shared node (Loam), the transport's topic mode is relay unless you opt in.
+
+Only if a topic opts into SDS channels, load **logos-reliable-channels**. The SDS app-facing surface is three calls + three events:[^9]
 - `channelCreate(channelId, contentTopic, senderId)` — build the channel + its listener.
 - `channelSend(channelId, {payload, ephemeral})` — `payload` is base64 at the FFI boundary.
 - `onChannelMessageReceived → {channelId, senderId, payload}` — payload base64 from the FFI serializer.
@@ -202,7 +204,7 @@ These each, alone, produce "syncs nothing" with no error.
 
 1. **Payload double-encoding mismatch.** The FFI base64-encodes on the way out and in. If one peer hands the transport already-base64 *text as bytes* (so it gets base64'd again) and another sends single-encoded, they can't decode each other. Pick one convention and make every peer match it; the receive side must mirror the send side's encoding exactly.[^27]
 
-2. **The `subscribeContentTopic` gate.** `channelCreate` builds the channel + listener but does **not** subscribe the content topic. The receive service only emits for topics in its subscribed set, and the channel's ingress rides that same event — so without an explicit content-topic subscribe, the node drops every incoming message *before the channel sees it*. Desktop cores get this via their node's subscription path; a raw mobile FFI does not — subscribe **and** channelCreate.[^28]
+2. **The `subscribeContentTopic` gate** (SDS channels only). `channelCreate` builds the channel + listener but does **not** subscribe the content topic. The receive service only emits for topics in its subscribed set, and the channel's ingress rides that same event — so without an explicit content-topic subscribe, the node drops every incoming message *before the channel sees it*. Desktop cores get this via their node's subscription path; a raw mobile FFI does not — subscribe **and** channelCreate.[^28]
 
 3. **Cross-thread signal drop.** The delivery layer may emit `messageReceived` off the transport/Qt thread; a naive connection drops the cross-thread signal and the app receives nothing while the wire is fine. Ensure the received-event hop is thread-safe (queued connection / posting onto the JS or event-loop thread).[^29]
 

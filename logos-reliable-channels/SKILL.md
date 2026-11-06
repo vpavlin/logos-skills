@@ -1,11 +1,28 @@
 ---
 name: logos-reliable-channels
-description: Use when building multi-writer sync or cross-user sharing (shared calendars, activity feeds, collaborative notes, Q&A, budgets) over the Logos/Waku delivery layer and you want ordering, gap-detection, retransmit and causal history instead of raw relay subscribe/send — the SDS Reliable Channel API (channelCreate / channelSend / onChannelMessageReceived). Reach for it when a channel "syncs nothing" / receives zero messages, when peers can't decode each other's payloads, when deciding SDS channels vs. libchat vs. plain relay, or when v0.38.1 and v0.39 (delivery_module v0.3.0) nodes stop understanding each other's channel messages (SegmentMessage).
+description: OPT-IN transport (as of 2026-11-06 the default for multi-writer apps is plain relay plus app-level catch-up; see "Default: plain relay" below). Use when you have decided a topic needs SDS inside the delivery layer for multi-writer sync or cross-user sharing (shared calendars, activity feeds, collaborative notes, Q&A, budgets) and you want ordering, gap-detection, retransmit and causal history instead of raw relay subscribe/send — the SDS Reliable Channel API (channelCreate / channelSend / onChannelMessageReceived). Reach for it when a channel "syncs nothing" / receives zero messages, when peers can't decode each other's payloads, when deciding SDS channels vs. libchat vs. plain relay, or when v0.38.1 and v0.39 (delivery_module v0.3.0) nodes stop understanding each other's channel messages (SegmentMessage).
 ---
+
+## Default: plain relay; SDS channels are opt-in (as of 2026-11-06)
+
+For a multi-writer app that already has its own catch-up (an event log reconciled with RBSR, plus a Store pull on join), **use plain relay `subscribe`/`send` for every topic, and opt a topic into SDS channels only when it needs SDS and has no app-level catch-up.** The app-level catch-up already does what SDS's gap detection and retransmit would; SDS on top only adds cost and failure modes:
+
+- **Per-message overhead.** Every SDS message carries its causal history (a bloom filter, about 19 KB per message as measured on 2026-11-03). Under RLN every message counts against a per-node budget (`logos-rln-budget`).
+- **A failed `channelCreate` fails silently.** The topic stays unsubscribed and the app receives nothing until it restarts. Plain relay has no such step.
+- **Channel state can wedge.** On `delivery_module` 0.4.0 (withdrawn upstream, but still listed in the catalog and picked as the highest version) and the identical 0.3.3, the SDS pending-content stash fills ("stash full, dropping oldest entry") and channels stop delivering, while plain relay keeps working. As of 2026-10-29, 0.3.0 was the last known-good version for channels (logos-delivery-module#169).
+
+Measured: two headless nodes on the same calendar, one on plain relay and one opted into channels, both caught up fully from an always-on peer and saw edits within about 2 s either way.
+
+- **What it looked like in one app (2026-10-09).** A desktop that joined a busy shared topic late logged `SDS message has missing dependencies` about 1,100 times, then `stash full`, and a phone's event never reached its core (receive counter frozen). The same topic on plain relay delivered it at once. That machine may also have had an older delivery fork installed, which on its own produces the same `stash full` (`logos-basecamp-0.3-port`, "How the trap shows up"), so check `delivery_module`'s version before blaming SDS. Either way relay fixed it.
+- **Moving a live topic to relay is backward compatible if the receiver unwraps.** Senders still on channels keep publishing SDS-wrapped frames (SegmentMessage-wrapped too on delivery ≥ 0.3.0); a relay subscriber gets them as ordinary `messageReceived` payloads. Run the channel unwrap on the relay path as well (the shim in `logos-basecamp-0.3-port`, Phase 0) and old and new nodes keep talking while apps move over.
+
+- **Relay doesn't segment.** Segmentation is SDS's: on plain relay one `send` is one Waku message, and one over the network's max message size (a fleet parameter, part of the preset) is refused whole. Chunk anything that can grow, such as snapshots and catch-up batches, in the app, and keep ordinary events well under the limit (`logos-rln-budget`: one event, one message).
+
+A transport that serves several apps should make the mode a per-topic setting with relay as the default, so one app's opt-in doesn't change the others. The rest of this skill applies once you have opted in.
 
 ## What a Reliable Channel gives you
 
-The Logos delivery layer ships an **SDS (Scalable Data Sync) Reliable Channel** on top of raw Waku relay. One channel == one content topic. Inside it you get, *for free, inside the delivery layer*: **segmentation** of large payloads, **SDS reliability** (ordering, gap detection, retransmit, causal-history references), optional **encryption**, and dispatch.[^1] This is the mature path (30+ releases) — prefer it over hand-rolling ack/retransmit on plain `subscribe`/`send`.[^2]
+The Logos delivery layer ships an **SDS (Scalable Data Sync) Reliable Channel** on top of raw Waku relay. One channel == one content topic. Inside it you get, *for free, inside the delivery layer*: **segmentation** of large payloads, **SDS reliability** (ordering, gap detection, retransmit, causal-history references), optional **encryption**, and dispatch.[^1] It is a mature path (30+ releases); if you opted in, use it rather than hand-rolling ack/retransmit on plain `subscribe`/`send`.[^2]
 
 Outgoing pipeline: `Segment → SDS → Encrypt → Dispatch`. Incoming: `Decrypt → SDS → Reassemble → emit event`.[^1]
 
