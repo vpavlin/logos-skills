@@ -13,6 +13,9 @@ For a multi-writer app that already has its own catch-up (an event log reconcile
 
 Measured: two headless nodes on the same calendar, one on plain relay and one opted into channels, both caught up fully from an always-on peer and saw edits within about 2 s either way.
 
+- **What it looked like in one app (2026-10-09).** A desktop that joined a busy shared topic late logged `SDS message has missing dependencies` about 1,100 times, then `stash full`, and a phone's event never reached its core (receive counter frozen). The same topic on plain relay delivered it at once. That machine may also have had an older delivery fork installed, which on its own produces the same `stash full` (`logos-basecamp-0.3-port`, "How the trap shows up"), so check `delivery_module`'s version before blaming SDS. Either way relay fixed it.
+- **Moving a live topic to relay is backward compatible if the receiver unwraps.** Senders still on channels keep publishing SDS-wrapped frames (SegmentMessage-wrapped too on delivery ≥ 0.3.0); a relay subscriber gets them as ordinary `messageReceived` payloads. Run the channel unwrap on the relay path as well (the shim in `logos-basecamp-0.3-port`, Phase 0) and old and new nodes keep talking while apps move over.
+
 A transport that serves several apps should make the mode a per-topic setting with relay as the default, so one app's opt-in doesn't change the others. The rest of this skill applies once you have opted in.
 
 ## What a Reliable Channel gives you

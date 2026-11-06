@@ -42,11 +42,11 @@ Loam adoption, Keycard, …) is `logos-app-charter` → *Which sibling skill for
 ## Decisions to make up front (don't defer these)
 - **Event schema** — `{ v, id:UUIDv4, type, hlc:{wall,ctr,dev}, dev, payload }`. `id` is the idempotency key. Version field from day one.
 - **Delta ops** — which mutations must be **commutative** (money moves, counters → net-zero two-legged deltas that sum) vs which can be **LWW-by-HLC** (renames, flags). Edits = superseding events; deletes = tombstones. Never an overwrite.
-- **Tenant / group model** — one shared dataset = one 32-byte secret = one derived topic = one channel. Membership/roles (if any) as events folded with enforcement-on-merge; ACLs are attribution, not enforcement, in an append-only p2p log.
+- **Tenant / group model** — one shared dataset = one 32-byte secret = one derived topic (a channel too, if the topic opts into SDS). Membership/roles (if any) as events folded with enforcement-on-merge; ACLs are attribution, not enforcement, in an append-only p2p log.
 - **Transport** — plain relay for every topic, with app-level catch-up (RBSR + a Store pull on join) doing the gap-filling (as of 2026-11-06). Opt a topic into SDS Reliable Channels only if it has no app-level catch-up; see `logos-reliable-channels` for why (per-message overhead, silent `channelCreate` failures, wedged channel state on some delivery_module versions). Not libchat unless you have a specific reason.
 - **Crypto** — pre-shared secret → HKDF room key → HMAC content topic → AEAD (ChaCha20-Poly1305) with the topic as AAD. Sharing = handing over the secret (QR/code).
 - **Cold-start history** — neither relay nor a channel backfills across restarts. Decide now: rebroadcast-on-join, store-query pull, or RBSR reconciliation.
-- **Identity / senderId** — a stable per-device id, distinct from the tenant secret; it is the HLC tie-break and the channel `senderId`.
+- **Identity / senderId** — a stable per-device id, distinct from the tenant secret; it is the HLC tie-break (and the channel `senderId` if a topic opts into SDS).
 
 ## The failure mode this whole stack exists to prevent
 Sync that **works but syncs nothing** — every drop in the pipeline is a silent `return`. "No peer on my topic", "arrives but won't decrypt", "channel layer never fires", "reassembly errored" all render identically as *not up to date*. The counters in logos-distributed-debugging are non-optional; instrument from the first two-node test.
