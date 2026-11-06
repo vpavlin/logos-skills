@@ -179,7 +179,12 @@ with files read from and written to this computer. An app can then offer both wi
   only the DHT, never peers you are already connected to, so the rest fail with "Failed to fetch
   manifest … Key doesn't exist" even while connected to the holder. If one node holds thousands of
   files (a backup target, an app repo host), raise the capacities and fall back to connected peers
-  for the manifest (both carried on a fork as of 2026-11-05, no upstream PR yet), or spread the data.
+  for the manifest (both carried on a fork as of 2026-11-05: `vpavlin/nim-codex@0f3e5cf`, capacities
+  20,000; connected peers still serve only manifests they advertise; no upstream PR yet), or spread
+  the data. Provider records live in memory only, on both sides, and a holder re-provides on a
+  ~30-minute sweep, so which ~500 are findable shifts over time. A client fetching many CIDs must go
+  past the ones it can't find yet and retry them later: one that restarts at the first miss
+  fetches nothing.
 - **`--block-ttl 0` deletes, it doesn't mean "forever".** Expiry is `now + ttl`, and the maintainer
   removes expired blocks: with ttl 0 an upload is gone within seconds. The default is **30 days**, so
   a server node started without the flag silently drops everything a month after upload. Use a huge
@@ -192,6 +197,25 @@ with files read from and written to this computer. An app can then offer both wi
   holder found through the DHT gives MB/s. Fix: logos-storage-nim#1575 (open as of 2026-11-01); only
   the *downloading* node needs it. Without it, prefer DHT discovery over an explicit `connect()` for
   big files.
+- **Every upload is a manifest, a tree and 64 KiB blocks.** Many mid-sized objects become millions
+  of blocks and thousands of manifests (a 150 GB restic repository: 9,500 manifests, 2.4 M blocks),
+  and node to node it measured 4-5 MiB/s on a link that carries several times that (as of
+  2026-11-05). Between machines that already know each other's addresses and trust each other
+  (your own devices on a mesh), a direct transfer is simpler and faster; Storage pays off where data
+  must be found by CID from holders you don't know in advance. If you do store many objects, make
+  them bigger (e.g. restic `--pack-size 64`).
+- **The manifest carries the filename and content type** you upload with: the same bytes under
+  another name get another CID (blocks are shared, the manifest isn't). Name uploads
+  deterministically if you rely on the CID being stable.
+- **A peer's SPR changes on every restart of that peer** (its sequence number), with the same peer id
+  and addresses. If you restart a node when its bootstrap SPRs change, compare peer id and addresses
+  (decode the record), not the string, or every peer restart restarts your node.
+- **Bootstrap flags are read at start only**, `--bootstrap-node` and `--no-bootstrap-node` exclude
+  each other, and any custom bootstrap node replaces the public ones. A private DHT of your own nodes
+  is just that: each started with the others' SPRs (or `--no-bootstrap-node` when alone), restarted
+  when the set changes.
+- The node logs warnings (e.g. failed manifest fetches) on stdout/stderr: capture them, or a server
+  failing for hours leaves nothing to read.
 - The REST API ignores HTTP `Range` (it answers 200 with the whole body).
 
 ## Address traps
@@ -205,8 +229,13 @@ with files read from and written to this computer. An app can then offer both wi
   patch if you dial IPv6 peers without an extip.
 - **Private/ULA addresses are dropped** from the DHT when the network is public (libstorage v0.5.1):
   overlay/mesh addresses (`fd00::/8`) won't propagate via a public bootstrap. Unverified in practice.
+  A private DHT on mesh ULAs, bootstrapped only from each other's SPRs, does work (as of 2026-11-05).
 - **IPv4-only filters on overlays:** on one overlay mesh, IPv6 carried every port while IPv4 only
   passed SSH. Test with a live listener before concluding "the mesh refuses TCP".[^addr]
+- **Ping works, TCP doesn't: check the host firewall on the overlay interface.** A distro firewall
+  (NixOS's, or firewalld, where an interface sits in exactly one zone and moves when another zone
+  claims it) drops TCP on the mesh interface while ICMP passes. Open the node's port on that
+  interface, and re-check after anyone edits zones.
 
 ## Mobile
 

@@ -140,6 +140,7 @@ Desktops moving to Basecamp 0.3 run library v0.39; phones built on v0.38.1 keep 
 | Relay gets traffic, phone sees nothing | subscribed a content topic as a pubsub topic → non-existent shard | Wire the content-topic/auto-shard JNI call (§6) |
 | `chan > 0` but `ours: 0` | channelCreate didn't subscribe; or single- vs double-base64 mismatch | JS: pair `subscribeContentTopic`+`channelCreate`, double-encode/decode (§7.1–7.2); mechanics in **logos-reliable-channels** |
 | Metrics shows 0 peers but sync works | `libp2p_peers` gauge under-reports | Trust message receipt, not the gauge; never read 0 as "offline" (§9) |
+| Node dead after airplane mode / network switch, never restarted | Watchdog waits for the network to "settle", but every `NetworkCallback` event restarts the wait, and a toggle fires many | Count only usable networks (internet and not a VPN: in a VpnService your own tunnel is a network too), and cap the settle on a clock that callbacks don't reset; restart the node when the cap passes (as of 2026-11-05) |
 | Both nodes "up," neither receives | different pubsub shard | Compare `/waku/2/rs/x/y` from Metrics (§9) |
 | Phone accepts a stranger's "update" | signed with shared debug key | Real release signing plugin (§10) |
 | F-Droid index empty after publish | published to a repo with empty `metadata/` | Publish to the trusted served repo (§11) |
