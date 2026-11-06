@@ -1,6 +1,6 @@
 ---
 name: logos-multiwriter-sync
-description: "Playbook for multi-writer, offline-convergent sync in a Logos/Waku app: event-sourced CRDT fold, HLC ordering, commutative deltas, an app-level AEAD envelope carried over SDS Reliable Channels, and a hub+RBSR backfill path — with the two hub gotchas that make it connect yet ingest nothing."
+description: "Playbook for multi-writer, offline-convergent sync in a Logos/Waku app: event-sourced CRDT fold, HLC ordering, commutative deltas, an app-level AEAD envelope carried over plain relay (SDS Reliable Channels opt-in), and a hub+RBSR backfill path — with the two hub gotchas that make it connect yet ingest nothing."
 ---
 
 Playbook for giving a Logos/Waku app **multi-writer sync**: several devices or people edit shared state while offline and must converge to identical state **without any write being lost** — and, when needed, share one dataset across users with roles. Works for a shared calendar, an activity tracker, collaborative notes, a household ledger, a Q&A board — anything where "last write wins" would silently drop someone's change.
@@ -94,7 +94,7 @@ Ke      = HKDF-SHA256(K, info="…/payload/v1")
 payload = nonce(12) ‖ ChaCha20-Poly1305(Ke, nonce, plaintext, aad=topic)
 ```
 
-**Carry those sealed bytes on SDS Reliable Channels, not raw relay** — they give ordering, gap detection, retransmit and causal history *inside* the delivery layer (mature, 30+ releases).[^13] The channel API surface (`channelCreate`/`channelSend`/`onChannelMessageReceived`, `channelId == contentTopic == derived topic`, `senderId == deviceId`), the load-bearing **no-op encryption provider** (SDS refuses a channel with no Encrypt provider, and the app already does its own AEAD above), the receive-chain, and the four silent-failure gates that otherwise make a joined channel decode nothing are the sibling skill's material — **see `logos-reliable-channels`**. This skill owns only what rides *inside* the channel: the AEAD envelope above.
+**Carry those sealed bytes on plain relay by default (as of 2026-11-06).** The RBSR catch-up below already finds and fills gaps, so SDS's in-layer ordering, gap detection and retransmit add per-message overhead without adding convergence (why: `logos-reliable-channels`, "Default: plain relay"). If a topic does opt into SDS Reliable Channels,[^13] its API surface (`channelCreate`/`channelSend`/`onChannelMessageReceived`, `channelId == contentTopic == derived topic`, `senderId == deviceId`), the load-bearing **no-op encryption provider** (SDS refuses a channel with no Encrypt provider, and the app already does its own AEAD above), the receive-chain, and the four silent-failure gates that otherwise make a joined channel decode nothing are the sibling skill's material — **see `logos-reliable-channels`**. This skill owns only what rides *inside* the channel: the AEAD envelope above.
 
 ### Backfill: no Store ⇒ you need a hub + set reconciliation
 On the 0.1.x delivery fork, `liblogosdelivery` exposes **no Waku Store query on desktop**, so someone must be online to re-serve history. (Upstream delivery_module v0.3.0 adds `storeQuery` and replays missed messages by default — useful, but it returns only what fleet store nodes still hold, so the hub + RBSR below remain the guarantee.) Two pieces:[^12][^13]
@@ -162,7 +162,7 @@ When the same fold runs in two languages (e.g. a JS reference + a C++ core), def
 - [ ] The write path never `await`s the send; unsent events carry a "syncing" badge; signature verify is memoized.[^25]
 - [ ] Signed payloads never contain `undefined` values; the canonicaliser skips them on every platform.[^24]
 - [ ] If events are signed: gate leniently — verify all, but only DROP privileged/gated events on a bad sig; open/participant events are admitted with `verified:false`, never dropped.[^21]
-- [ ] Transport = app-level AEAD envelope carried on SDS Reliable Channels (channel mechanics, no-op provider, receive gates → `logos-reliable-channels`); hub + RBSR for backfill, minding the two hub gotchas.[^13][^12][^20]
+- [ ] Transport = app-level AEAD envelope carried on plain relay; SDS channels only for a topic that opts in (channel mechanics, no-op provider, receive gates → `logos-reliable-channels`); hub + RBSR for backfill, minding the two hub gotchas.[^13][^12][^20]
 - [ ] Cross-user sharing: roles admitted deterministically on merge; privacy boundary = which key/dataset.[^16]
 
 ## Where else this applies
@@ -173,7 +173,7 @@ The origin is a household-budget app, but nothing here is finance-specific — t
 - **Collaborative notes / docs:** each keystroke-batch or block op is an event; block ordering uses the HLC total order; a delete is a sticky tombstone so a late edit can't resurrect a removed block; RBSR backfills a device that was offline for a week without resending the whole doc.
 - **Multiplayer Q&A / forum:** upvotes are commutative deltas; post edits supersede; roles (mod/member/viewer) are admitted deterministically on merge exactly like the group-sharing path; a private board is just a key you don't share.
 
-Only two things are domain-specific and get swapped out: the **payload schemas** (the `type`/`payload` table) and the **invariant** you assert. The event-log + fold + HLC + commutative-delta skeleton, the AEAD-envelope-over-SDS-channel transport, and the hub/RBSR backfill (with its two hub gotchas) are identical across apps. The channel *mechanics* themselves live in the sibling `logos-reliable-channels` skill and are shared verbatim by every Logos app that syncs.
+Only two things are domain-specific and get swapped out: the **payload schemas** (the `type`/`payload` table) and the **invariant** you assert. The event-log + fold + HLC + commutative-delta skeleton, the AEAD-envelope-over-relay transport, and the hub/RBSR backfill (with its two hub gotchas) are identical across apps. The channel *mechanics* themselves live in the sibling `logos-reliable-channels` skill and are shared verbatim by every Logos app that syncs.
 
 ## Sources & evidence
 

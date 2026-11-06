@@ -28,7 +28,7 @@ Every app is a **Basecamp `ui_qml` module** (QML view + C++ backend) **and** an
 ### 2. Build on Loam, don't re-implement it
 Use the shared Loam bits instead of hand-rolling per app:
 - **Transport:** `loam_core` (Basecamp) / `logos-transport` (mobile) — ONE shared delivery
-  node per device, SDS Reliable Channels, Core/Edge, future BLE bearer. Apps are *clients*.
+  node per device, plain relay by default with SDS Reliable Channels opt-in per topic (as of 2026-11-06), Core/Edge, BLE bearer. Apps are *clients*.
 - **Sync brain:** `loam-sync` (aka logos-sync) — the event-log CRDT: HLC ordering,
   range-based reconciliation (RBSR) for cold-start backfill, the merge/fold. Import it as an
   in-tree submodule with a committed dist (Metro can't bundle it out-of-tree); genuinely
@@ -65,7 +65,7 @@ on the network** and never fails without it.
 ### 4. Must work offline — and converge later
 Capture, edit, and view work with no network. When peers reconnect they converge with no
 lost writes and no coordinator.
-- *How:* SDS gives ordering/gap/retransmit *within a session*; it does **not** backfill
+- *How:* the transport (plain relay, or SDS channels if a topic opted in) carries live traffic *within a session*; it does **not** backfill
   pre-join history (the 0.1.x fork exposes no store query to modules; v0.3.0's store catch-up
   returns only what fleet store nodes still hold) — layer app-level RBSR
   (loam-sync) on top for cold-start. If a device shows nothing after joining, that's the
@@ -197,7 +197,7 @@ This is the **canonical index** of the skill set: every skill is listed here, an
 - **The house rules (this skill):** `logos-app-charter`.
 - **Kickoff / scoping / "which layer is missing":** `logos-multiwriter-app-blueprint`.
 - **The CRDT/fold/HLC/envelope/hub mechanics:** `logos-multiwriter-sync`.
-- **SDS Reliable Channels (channelCreate/Send, the silent-failure gates):** `logos-reliable-channels`.
+- **Relay by default; SDS Reliable Channels when a topic opts in (channelCreate/Send, the silent-failure gates):** `logos-reliable-channels`.
 - **Desktop module (mkLogosQmlModule, `.rep`, headless hub, `.lgx`):** `logos-basecamp-module`.
 - **Moving an app to Basecamp 0.3.x / builder 0.3.1 / delivery v0.3.0:** `logos-basecamp-0.3-port`.
 - **Headless nodes and two-node test rigs on the 0.3 runtime (`logosctl`):** `logos-headless-logosctl`.

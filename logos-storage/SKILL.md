@@ -171,6 +171,29 @@ with files read from and written to this computer. An app can then offer both wi
 - A NAT-ed node fetching from the server: `connect(serverPeer, [its /ip4/…/tcp/…])` first helps, and the
   server itself needs the #1540 fix to fetch FROM a NAT-ed node (with it: ~2 min for a small file).
 
+## More traps (as of 2026-11)
+
+- **A node advertises at most ~500 CIDs.** The vendored nim-libp2p Kademlia caps both provided keys
+  and provider records at 500 by default, and libstorage builds its DHT with the defaults. A node
+  holding more than that announces only the ~500 it re-provided most recently. Fetching a manifest asks
+  only the DHT, never peers you are already connected to, so the rest fail with "Failed to fetch
+  manifest … Key doesn't exist" even while connected to the holder. If one node holds thousands of
+  files (a backup target, an app repo host), raise the capacities and fall back to connected peers
+  for the manifest (both carried on a fork as of 2026-11-05, no upstream PR yet), or spread the data.
+- **`--block-ttl 0` deletes, it doesn't mean "forever".** Expiry is `now + ttl`, and the maintainer
+  removes expired blocks: with ttl 0 an upload is gone within seconds. The default is **30 days**, so
+  a server node started without the flag silently drops everything a month after upload. Use a huge
+  value (e.g. `--block-ttl=3153600000`, 100 years). Restarting with a new TTL changes only new blocks;
+  to extend existing ones, re-upload the same bytes with the same block size, filename and
+  content type (they are part of the manifest), and check the returned CID is unchanged.
+- **Slow downloads from peers you `connect()`ed to.** Peers added with `connect()` join the download
+  swarm without ever being asked what they hold, so each batch waits for a per-batch presence answer
+  and falls back to a 2 s retry: about one batch every 2 s (64 KiB/s with 64 KiB blocks). The same
+  holder found through the DHT gives MB/s. Fix: logos-storage-nim#1575 (open as of 2026-11-01); only
+  the *downloading* node needs it. Without it, prefer DHT discovery over an explicit `connect()` for
+  big files.
+- The REST API ignores HTTP `Range` (it answers 200 with the whole body).
+
 ## Address traps
 
 - **No `extip` = no announced address.** A node announces exactly its `nat=extip:<addr>`; without it
@@ -192,6 +215,11 @@ node does: see storage_gateway above). A **fetch-only** Android client
 is feasible: libstorage cross-compiled to arm64 with the NDK, behind a JNI/RN bridge, downloading by
 CID from reachable providers (in practice, the hub). Uploading from phones stays out of scope; phones
 author events, desktops or hubs hold blobs. (Upstream tracking issue: logos-storage-nim#1221.)[^mobile]
+
+If the phone already runs a **shared node** that bundles libstorage (Loam, see `loam-integrate-app`),
+fetch through it instead of putting libstorage into every app: one node, one cache, one set of
+connections, and apps stay small. Pass the holder's peer id *and* addresses with the request (a signed
+peer record in the invite is the easy way), since the node has to dial it.
 
 ## Snapshots — the catch-up lever
 

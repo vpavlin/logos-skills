@@ -139,6 +139,18 @@ reintroduce them.
 - **Payload format changes reach clients through the service.** When desktops moved to a delivery
   library that wraps channel payloads (`logos-basecamp-0.3-port`), the unwrap had to be applied on
   the client's path as well, because the service only forwards candidate payloads.[^seg]
+- **An app that started before Loam must register again.** If the Loam app's JS context is created
+  (or re-created) after it replayed the buffered `register` calls, it never learns about the app: the
+  app's `subscribe` is queued as "awaiting approval" forever (it is already approved) and its
+  `storeSync` is dropped. Symptom: "looks connected, receives nothing, restarting the app fixes it".
+  Fixed in Loam 0.0.66 (the service replays every connected app's register and topics on each JS
+  start, and restores approved apps detached at boot). On the client side, re-check with the service
+  before a store pull and keep the periodic `refreshPeerInfo`, so the re-subscribe on node-up can
+  fire.[^race]
+- **Topics default to plain relay.** As of loam-transport ADR 0023 and loam_core 0.7.3 (2026-11-03)
+  every topic uses plain relay unless the app opts it into SDS channels (`setTopicMode(prefix,
+  "channels")`). An app's *own* fallback node (no Loam installed) uses the transport version it
+  vendors, so bump it to get the same default there (`loam-update-app`).[^relay]
 
 Sources: this recipe distills the 2026-08-15 debugging of the co.logos→xyz.vpavlin/Loam rename;
 see memory `loam-shared-delivery-ble`.
@@ -149,3 +161,5 @@ see memory `loam-shared-delivery-ble`.
 [^store]: Memory `loam-shared-node-storesync` (ADR 0021 in loam-transport; restored 2026-09-29; join stall fixed in `c77eb84` / Loam 0.0.52, device-confirmed 2026-09-30).
 [^ble]: Memory `loam-client-blind-to-ble` (host `pushMetrics` gains `ble`; client `refreshPeerInfo` treats BLE peers as mesh reachability).
 [^seg]: `loam-transport` `port/0.3` `2a472be` ("segment-compat on the shared-Loam path too (ServiceNode)").
+[^race]: Loam 0.0.66 (`feat/storage` `b654737`), loam-transport `feat/loam-cache-all` `0101275`; built 2026-11-02, awaiting a device confirmation.
+[^relay]: loam-transport ADR 0023 (supersedes ADR 0002), `relay-topics.ts`; loam_core 0.7.3; Loam 0.0.70.
