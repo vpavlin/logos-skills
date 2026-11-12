@@ -133,7 +133,11 @@ for a headless node.
 - **`textFormat: Text.PlainText` on every text item showing other people's data.** *Why:* Qt
   renders HTML-looking strings and fetches remote `<img>` the moment they're shown — one crafted
   title leaks every reader's IP. Gate with `qml-plaintext.py --check`.
-- Mechanics: `logos-basecamp-module` (§ no blocking calls, § plain text).
+- **Cheap when idle.** A view never replaces its whole state per poll (lists rebuild), never
+  runs an endless animation, and shows work with a once-a-second blink plus words saying what
+  runs; cores run heavy children at a low priority. *Why:* otherwise Basecamp itself burns CPU
+  while "nothing happens", and people find out by measuring. Check idle CPU before shipping.
+- Mechanics: `logos-basecamp-module` (§ no blocking calls, § keep the view cheap, § plain text).
 
 - **Every outcome is visible.** Each action reports success or a human-readable failure;
   cores return `{ok, error}` and never throw across IPC; a write the fold would drop is

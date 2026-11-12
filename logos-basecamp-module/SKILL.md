@@ -30,7 +30,7 @@ Core module (`<app>_core/`):
 
 View (`module/`):
 5. `metadata.json`: `{"name":"<app>","type":"ui_qml","view":"Main.qml","icon":"icon.png","dependencies":["<app>_core"]}`.
-6. `Main.qml` **at the module root**. The builder also accepts `qml/Main.qml` or `src/qml/Main.qml`, but keeping the entry at root avoids the path-resolution surprises that differ across Basecamp versions (the host resolves the view relative to the plugin root).[^7]
+6. `Main.qml` **at the module root** for a one-file view. The builder copies **only that file** when the view sits at the root; for a view split into several QML files (screens, components), put them all in `qml/` and set `"view": "qml/Main.qml"` — the builder then copies the whole folder (as of builder 0.3.1). A component in another file can't see `Main.qml`'s ids: pass the root in (`ClipsScreen { app: root }`) and use `app.` inside.[^7]
 7. `flake.nix`: `logos-module-builder.lib.mkLogosQmlModule { src=./.; configFile=./metadata.json; flakeInputs=inputs; }`. Wire the core as a local input: `<app>_core.url = "path:../<app>_core"` with `.inputs.logos-module-builder.follows` and `.inputs.delivery_module.follows` so the view, core, and delivery all build against ONE SDK rev (avoids cross-module IPC skew).[^13]
 8. `git add` every new file (`icon.png`, new sources) — nix flakes only see git-tracked files (see trap below).[^12]
 9. Build: `nix build .#lgx-portable` for each. Publish both to the repo (below).
@@ -99,12 +99,12 @@ function refresh() {
   if (root.refreshBusy) { root.refreshAgain = true; return }
   root.refreshBusy = true
   root.core("snapshot", [], function (raw) {
-    var b = asState(raw); if (b) root.stateJson = b
+    var b = asState(raw); if (b && b !== root.stateJson) root.stateJson = b   // unchanged: no re-render (see "Keep the view cheap")
     root.refreshBusy = false
     if (root.refreshAgain) { root.refreshAgain = false; root.refresh() }
   })
 }
-Timer { interval: 2500; running: true; repeat: true; onTriggered: root.refresh() }
+Timer { interval: root.anyBusy ? 1500 : 5000; running: true; repeat: true; onTriggered: root.refresh() }
 Component.onCompleted: { logos.onModuleEvent && logos.onModuleEvent("<app>_core","stateChanged"); refresh(); }
 ```
 On a **mutation**, have the core return the fresh state JSON, so the view renders straight from the instance that applied the edit (don't wait for the next poll).[^8]
@@ -115,6 +115,33 @@ poll, so it wipes what the user is typing ("it clears before I can hit save"). G
 `text` only while the field isn't focused or edited. Clear `edited` after a successful save, or
 when focus leaves an unchanged field, and let Escape restore the saved value. Test it by typing
 into the field in an offscreen harness and then forcing refreshes.[^fields]
+
+## Keep the view cheap: no re-render per poll, no endless motion
+
+A polled view is easy to make expensive, and the cost lands on **Basecamp's own process** (the person sees Basecamp eating CPU, not your app). Two habits cause almost all of it:
+
+- **Replacing the whole state every poll.** `root.st = JSON.parse(raw)` assigns a new object, so *every* binding on `st` re-evaluates — and every `Repeater`/`ListView` whose `model:` comes from it **destroys and recreates all its delegates**, images included, even when nothing changed. At a 1–2 s poll that is a full rebuild, forever.
+- **Motion that never stops.** `NumberAnimation { loops: Animation.Infinite }`, a running `BusyIndicator`, an indeterminate progress bar: each repaints at the frame rate for as long as it runs — often "always", because nothing turns it off when the work ends or the item scrolls away.
+
+Do this instead:
+- **Skip identical answers** (compare the raw string with the last one), and **split the state into parts** set only when that part changed. One helper does it:
+  ```qml
+  property var _seen: ({})
+  function keep(name, v) {                    // root[name] = v, only if it changed
+      var s = JSON.stringify(v === undefined ? null : v)
+      if (root._seen[name] === s) return
+      root._seen[name] = s
+      root[name] = v
+  }
+  // in refresh(): keep("items", o.items); keep("status", o.status); keep("job", metaWithoutLists) …
+  ```
+  Bind each list to its own part (`model: root.items`), never to the whole snapshot. Keep fast-changing fields (logs, progress counters) out of the parts that lists depend on; show a log only while it's expanded.
+- **One blink, not an animation:** a single `Timer { interval: 1000; running: root.anyBusy; repeat: true; onTriggered: root.pulse = !root.pulse }`, and busy dots bind `opacity: root.pulse ? 1 : 0.2`. Pair it with words saying *what* runs and how far ("Cutting 2 of 8", "Finding scenes 3/12") — that tells more than any spinner.
+- **Poll by need:** slower when idle (5 s), faster only while something runs.
+- **Heavy work spawned by a core runs at a low priority** so the desktop stays responsive: `proc->setChildProcessModifier([] { ::setsid(); ::setpriority(PRIO_PROCESS, 0, 10); })` (children, including a container runtime's helpers, inherit it).
+- **Measure before shipping:** open the view, leave it idle for a minute, read the CPU of the Basecamp/`logos_host` processes (`top -p PID`, `pidstat -p PID 1 30`); then again while a long operation runs. Idle should be ~0 %. In an offscreen harness, count delegate creations (`Component.onCompleted` incrementing a counter) across a few polls with an unchanged core: it should stay at zero.
+
+**Background work has its own state.** If a core runs something *beside* an item's main flow (a prefetch, a scan, a thumbnail pass), give it its own state field (`scan: running|done|failed`, with progress) and leave the item's main status alone. Reusing the main "running" flag for side work locks the item ("wait for the current step to finish") and, if nothing resets it, leaves it "running" for good.
 
 ## Style the view with the Logos design system (do NOT hand-roll QtQuick)
 
@@ -144,6 +171,11 @@ The transport already fails silently (`logos-distributed-debugging`); the app on
 - **Timeouts are failures with a message.** `callModuleAsync` takes a timeout; when it fires, say what was being attempted. Polls that time out stay quiet, but surface "can't reach the core" after several misses rather than showing stale state as current.
 - **Long operations show progress and a terminal state** (pending → done/failed, with a timeout), never an indefinite spinner. Storage transfers, joins and catch-up are the usual suspects.
 - **Show versions and a copyable diagnostics block** somewhere (core version, view version, delivery status, peer count, counters). It turns a support thread into one paste (see `logos-distributed-debugging`, Move 8).
+
+## What a view can't do (Basecamp 0.3.x, as of 2026-11-12)
+
+- **Play video or audio.** Basecamp 0.3.2 ships no QtMultimedia (no `libQt6Multimedia`, no `QtMultimedia` QML import), and a module may not bring its own (the sandbox refuses native QML plugins inside a module's folder). Open media in the browser or the system player via the core (`xdg-open`/`open`) until the host ships it.
+- **Read files outside its own install folder.** URL properties pointing elsewhere are blanked by the sandbox. Pictures a core produces must be copied under the view's folder to be shown — but a merged, not yet released Basecamp change rejects **extra files in an installed module's folder** at launch, so treat that as temporary: keep such caches small, gitignore them (a cache inside the view source folder gets packaged), and expect to move them to a host-provided data folder.
 
 ## Render peer-supplied text as PLAIN text (privacy)
 
