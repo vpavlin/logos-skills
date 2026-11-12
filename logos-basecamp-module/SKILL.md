@@ -175,7 +175,9 @@ The transport already fails silently (`logos-distributed-debugging`); the app on
 ## What a view can't do (Basecamp 0.3.x, as of 2026-11-12)
 
 - **Play video or audio.** Basecamp 0.3.2 ships no QtMultimedia (no `libQt6Multimedia`, no `QtMultimedia` QML import), and a module may not bring its own (the sandbox refuses native QML plugins inside a module's folder). Open media in the browser or the system player via the core (`xdg-open`/`open`) until the host ships it.
-- **Read files outside its own install folder.** URL properties pointing elsewhere are blanked by the sandbox. Pictures a core produces must be copied under the view's folder to be shown — but a merged, not yet released Basecamp change rejects **extra files in an installed module's folder** at launch, so treat that as temporary: keep such caches small, gitignore them (a cache inside the view source folder gets packaged), and expect to move them to a host-provided data folder.
+- **Read files outside its own install folder.** URL properties pointing elsewhere are blanked by the sandbox — including the module's own `module_data` folder. For **pictures** use the host's `SandboxImages` (newer than 0.3.2): the core returns the bytes as a data URL, the view calls `SandboxImages.sourceFor(dataUrl)` and shows the returned `image://sandbox-media/…` source (limits: 6 MB a picture, 64 MB per view; `release(source)` when done). On older hosts the only way is copying under the view's folder, which a merged, not yet released change will forbid (installed module folders get integrity-checked at launch, extra files rejected) — so keep that copy as a fallback only, gitignored (a cache inside the view source folder gets packaged).
+
+**Where a core keeps its data:** `instancePersistencePath()` (from `LogosModuleContext`; per Basecamp instance under its `--user-dir`, stable across restarts), not a fixed folder in `$HOME` — two Basecamp instances would share and overwrite it. It's empty until `onContextReady()`, so read persisted state there, not in the constructor.
 
 ## Render peer-supplied text as PLAIN text (privacy)
 
